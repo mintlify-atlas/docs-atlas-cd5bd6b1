@@ -1,0 +1,186 @@
+---
+title: Database Views
+description: SQL Server views for credit sales monitoring, installment tracking, and account statements in TechCore Mini ERP
+---
+
+# Database Views
+
+TechCore Mini ERP includes three critical views that simplify credit sales monitoring and customer account management. These views automatically filter out voided transactions (`nula = 0`) to ensure data accuracy.
+
+## vw_CuotasVencidas
+
+Shows all overdue installments with calculated late fees and days past due.
+
+### Purpose
+- Identify customers with overdue payments
+- Calculate late fees automatically (2% per day)
+- Monitor accounts receivable aging
+- Generate collection reports
+
+### SQL Definition
+
+```sql
+CREATE VIEW vw_CuotasVencidas
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota,
+    DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS diasAtraso,
+    (pp.montoCuota * 0.02) * DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS moraCalculada
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento < GETDATE()
+AND v.nula = 0
+GO
+```
+
+### Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `norden` | VARCHAR(50) | Sale order number |
+| `cliente` | VARCHAR(200) | Customer name |
+| `numeroCuota` | INT | Installment number |
+| `fechaVencimiento` | DATE | Due date |
+| `montoCuota` | DECIMAL(18,2) | Installment amount |
+| `diasAtraso` | INT | Days overdue |
+| `moraCalculada` | DECIMAL(18,2) | Late fee (2% per day) |
+
+<Note>
+The late fee calculation (`moraCalculada`) uses a 2% daily rate multiplied by days overdue. This is automatically computed and does not require manual calculation.
+</Note>
+
+## vw_CuotasPorVencer
+
+Displays upcoming installments that are due but not yet overdue.
+
+### Purpose
+- Track upcoming payment obligations
+- Send payment reminders to customers
+- Forecast cash flow from accounts receivable
+- Prevent installments from becoming overdue
+
+### SQL Definition
+
+```sql
+CREATE VIEW vw_CuotasPorVencer
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento >= GETDATE()
+AND v.nula = 0
+GO
+```
+
+### Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `norden` | VARCHAR(50) | Sale order number |
+| `cliente` | VARCHAR(200) | Customer name |
+| `numeroCuota` | INT | Installment number |
+| `fechaVencimiento` | DATE | Due date |
+| `montoCuota` | DECIMAL(18,2) | Installment amount |
+
+<Info>
+This view includes installments due today and in the future. Use this for proactive customer communication and payment reminders.
+</Info>
+
+## vw_EstadoCuenta
+
+Provides a comprehensive account statement for all credit sales, showing total amounts, balances, and payments made.
+
+### Purpose
+- Generate customer account statements
+- Monitor credit sale performance
+- Track payment progress on installment plans
+- Reconcile payments received vs outstanding balances
+
+### SQL Definition
+
+```sql
+CREATE VIEW vw_EstadoCuenta
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    v.total,
+    v.saldo,
+    v.meses,
+    SUM(ISNULL(a.monto,0)) AS totalAbonado
+FROM ventas v
+INNER JOIN clientes c ON v.codclien = c.codclien
+LEFT JOIN abonosVentas a ON v.norden = a.norden
+WHERE v.tipoPago = 'CREDITO'
+AND v.nula = 0
+GROUP BY v.norden, c.nombre, v.total, v.saldo, v.meses
+GO
+```
+
+### Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `norden` | VARCHAR(50) | Sale order number |
+| `cliente` | VARCHAR(200) | Customer name |
+| `total` | DECIMAL(18,2) | Total sale amount |
+| `saldo` | DECIMAL(18,2) | Current outstanding balance |
+| `meses` | INT | Payment plan duration (months) |
+| `totalAbonado` | DECIMAL(18,2) | Total payments received |
+
+<Note>
+The `totalAbonado` column aggregates all payments from the `abonosVentas` table. The `saldo` field is automatically updated by the `TR_ActualizarSaldo` trigger when payments are recorded.
+</Note>
+
+## Usage Examples
+
+### Find Customers with Overdue Payments
+
+```sql
+SELECT cliente, COUNT(*) AS cuotasVencidas, SUM(montoCuota) AS totalVencido
+FROM vw_CuotasVencidas
+GROUP BY cliente
+ORDER BY totalVencido DESC
+```
+
+### Get Payment Reminders for Next 7 Days
+
+```sql
+SELECT *
+FROM vw_CuotasPorVencer
+WHERE fechaVencimiento <= DATEADD(DAY, 7, GETDATE())
+ORDER BY fechaVencimiento
+```
+
+### Customer Account Summary
+
+```sql
+SELECT cliente, 
+       COUNT(*) AS ventasCredito,
+       SUM(total) AS totalVendido,
+       SUM(saldo) AS saldoPendiente,
+       SUM(totalAbonado) AS totalPagado
+FROM vw_EstadoCuenta
+GROUP BY cliente
+ORDER BY saldoPendiente DESC
+```
+
+## Related Topics
+
+- [Triggers](/database/triggers) - Automated processes that maintain data integrity
+- [Indexes](/database/indexes) - Performance optimizations for view queries
+- [Sales and Purchases](/database/tables/sales-purchases) - Complete sales and payment table structure
+- [Database Overview](/database/overview) - Entity relationships and architecture

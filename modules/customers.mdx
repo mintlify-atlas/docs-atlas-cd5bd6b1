@@ -1,0 +1,144 @@
+---
+title: Customers
+description: Manage customer information, contact details, and transaction history in TechCore Mini ERP
+---
+
+The customers module allows you to maintain a comprehensive database of your business clients, including their contact information, transaction history, and account status.
+
+## Customer entity
+
+Customers are stored in the `Cliente` model with the following fields:
+
+<ResponseField name="Codclien" type="string" required>
+  Unique customer code identifier (primary key)
+</ResponseField>
+
+<ResponseField name="Nombre" type="string" required>
+  Full name or business name of the customer
+</ResponseField>
+
+<ResponseField name="Telefono" type="string">
+  Phone number for customer contact (max 15 characters)
+</ResponseField>
+
+<ResponseField name="Email" type="string">
+  Email address for customer communications (max 200 characters)
+</ResponseField>
+
+<ResponseField name="Direccion" type="string">
+  Physical address or delivery location (max 300 characters)
+</ResponseField>
+
+<ResponseField name="Estado" type="bool">
+  Customer status flag (true = active, false = inactive). Defaults to true
+</ResponseField>
+
+<ResponseField name="CreatedDate" type="DateTime">
+  Timestamp when the customer record was created. Automatically set to current date/time
+</ResponseField>
+
+## Database schema
+
+```sql
+CREATE TABLE clientes(
+    codclien VARCHAR(50) PRIMARY KEY,
+    nombre VARCHAR(200) NOT NULL,
+    telefono VARCHAR(15),
+    email VARCHAR(200),
+    direccion VARCHAR(300),
+    estado BIT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE()
+)
+```
+
+### Indexes
+
+The customers table includes the following indexes for optimized query performance:
+
+- `IDX_clientes_nombre` - Index on customer name for fast name-based searches
+- `IDX_clientes_estado` - Index on status for filtering active/inactive customers
+- `IDX_clientes_email` - Index on email for quick email lookups
+
+## Relationships
+
+Customers have a one-to-many relationship with sales transactions:
+
+- **Ventas (Sales)**: A customer can have multiple sales orders. The relationship is established through the `codclien` foreign key in the `ventas` table.
+
+## User workflows
+
+### Adding a new customer
+
+<Steps>
+  <Step title="Enter customer code">
+    Provide a unique customer identifier in the `Codclien` field. This code will be used to reference the customer throughout the system.
+  </Step>
+  
+  <Step title="Fill in required information">
+    Enter the customer's full name or business name in the `Nombre` field. This is a required field.
+  </Step>
+  
+  <Step title="Add contact details">
+    Optionally provide phone number, email address, and physical address for customer communications and delivery purposes.
+  </Step>
+  
+  <Step title="Save customer record">
+    Save the customer. The system automatically sets the creation date and activates the customer account by default.
+  </Step>
+</Steps>
+
+### Managing customer status
+
+The `Estado` field controls whether a customer is active in the system:
+
+<Tip>
+  Instead of deleting customer records, set `Estado` to false to deactivate them. This preserves historical transaction data while preventing new sales.
+</Tip>
+
+- **Active customers** (`Estado = true`) can be selected for new sales transactions
+- **Inactive customers** (`Estado = false`) are hidden from active customer lists but their historical data remains accessible
+
+### Viewing customer sales history
+
+Each customer record maintains a collection of all associated sales transactions through the `Venta` navigation property. This allows you to:
+
+- Track total purchases per customer
+- Monitor payment history and outstanding balances
+- Analyze customer buying patterns
+- Identify high-value customers
+
+### Searching for customers
+
+The database indexes enable efficient searching by:
+
+- **Customer name**: Quickly find customers by partial or full name matches
+- **Email address**: Look up customers using their email
+- **Status**: Filter to show only active or inactive customers
+
+<Warning>
+  The customer code (`Codclien`) cannot be changed after creation as it serves as the primary key and is referenced by sales transactions.
+</Warning>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Customer code conventions">
+    Establish a consistent naming convention for customer codes, such as:
+    - Sequential numbers: `CUST001`, `CUST002`
+    - Initials + number: `JD001` for John Doe
+    - Business identifier: `ABC-CORP` for ABC Corporation
+  </Accordion>
+  
+  <Accordion title="Data quality">
+    - Verify email addresses are properly formatted before saving
+    - Keep phone numbers in a consistent format
+    - Update customer information when notified of changes
+    - Use complete addresses including city and postal code for accurate delivery
+  </Accordion>
+  
+  <Accordion title="Customer maintenance">
+    - Regularly review inactive customers to identify re-engagement opportunities
+    - Merge duplicate customer records to maintain data integrity
+    - Archive old customer data according to your data retention policies
+  </Accordion>
+</AccordionGroup>

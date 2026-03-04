@@ -1,0 +1,502 @@
+---
+title: System requirements
+description: Hardware and software requirements for running TechCore Mini ERP in development and production environments.
+---
+
+This page outlines the technical requirements needed to develop, deploy, and run TechCore Mini ERP effectively.
+
+## Software requirements
+
+### .NET framework
+
+TechCore is built on .NET 10.0 and requires this specific version.
+
+```xml TechCore.csproj
+<PropertyGroup>
+  <TargetFramework>net10.0</TargetFramework>
+  <Nullable>enable</Nullable>
+  <ImplicitUsings>enable</ImplicitUsings>
+</PropertyGroup>
+```
+
+**Required:**
+- .NET 10.0 SDK or later
+- .NET 10.0 Runtime (included with SDK)
+
+**Download:**
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+
+<Warning>
+  TechCore will NOT run on earlier .NET versions. The `net10.0` target framework mandate is non-negotiable. Ensure your development and production environments have .NET 10.0 installed.
+</Warning>
+
+### Database
+
+TechCore uses SQL Server with advanced features including triggers, views, and indexes.
+
+**Minimum version:**
+- SQL Server 2019 or later
+- SQL Server 2022 (recommended for best performance)
+
+**Supported editions:**
+- SQL Server Express (free, suitable for development and small deployments)
+- SQL Server Standard
+- SQL Server Enterprise
+- Azure SQL Database (Platform-as-a-Service option)
+
+**Required features:**
+- Full-text search capabilities (for product and customer searches)
+- Trigger support (`TR_DisminuirStock`, `TR_ActualizarSaldo`)
+- View support (materialized views for reporting)
+- Database Mail (optional, for automated notifications)
+
+**Connection configuration:**
+
+The application connects to SQL Server using connection strings defined in `appsettings.json`:
+
+```json appsettings.json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=.\\;Database=TechCore;Trusted_Connection=True;TrustServerCertificate=True;"
+  }
+}
+```
+
+**Authentication options:**
+- Windows Authentication (default): `Trusted_Connection=True`
+- SQL Server Authentication: `User Id=username;Password=password`
+
+<Note>
+  For production deployments, store sensitive connection strings in environment variables or Azure Key Vault rather than `appsettings.json`.
+</Note>
+
+### Entity Framework Core dependencies
+
+TechCore uses Entity Framework Core 10.0.3 for data access:
+
+```xml TechCore.csproj
+<ItemGroup>
+  <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.3" />
+  <PackageReference Include="Microsoft.EntityFrameworkCore.Abstractions" Version="10.0.3" />
+  <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.3">
+    <PrivateAssets>all</PrivateAssets>
+    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+  </PackageReference>
+  <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.3" />
+  <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.3">
+    <PrivateAssets>all</PrivateAssets>
+    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+  </PackageReference>
+</ItemGroup>
+```
+
+**Packages installed:**
+- `Microsoft.EntityFrameworkCore` - Core EF functionality
+- `Microsoft.EntityFrameworkCore.Abstractions` - Interface definitions
+- `Microsoft.EntityFrameworkCore.Design` - Design-time tools for scaffolding and migrations
+- `Microsoft.EntityFrameworkCore.SqlServer` - SQL Server database provider
+- `Microsoft.EntityFrameworkCore.Tools` - Package Manager Console tools
+
+These packages are automatically restored when you run `dotnet build` or `dotnet restore`.
+
+### Node.js and npm
+
+TechCore uses Tailwind CSS for styling, which requires Node.js and npm for compilation.
+
+**Required versions:**
+- Node.js 18.0 or later (LTS recommended)
+- npm 9.0 or later (bundled with Node.js)
+
+**npm dependencies:**
+
+```json package.json
+{
+  "dependencies": {
+    "@tailwindcss/cli": "^4.2.1",
+    "tailwindcss": "^4.2.1"
+  },
+  "devDependencies": {
+    "daisyui": "^5.5.19"
+  }
+}
+```
+
+**Build integration:**
+
+The CSS build runs automatically before each application build:
+
+```xml TechCore.csproj
+<ItemGroup>
+  <UpToDateCheckBuilt Include="wwwroot/css/site.css" Set="Css" />
+  <UpToDateCheckBuilt Include="tailwind.config.js" Set="Css" />
+</ItemGroup>
+
+<Target Name="Tailwind" BeforeTargets="Build">
+  <Exec Command="npm run css:build" />
+</Target>
+```
+
+This ensures `wwwroot/css/styles.css` is always up-to-date with your Tailwind classes.
+
+<Note>
+  The `Tailwind` MSBuild target executes `npm run css:build` before every build. Ensure Node.js and npm are in your system PATH for this to work in automated build pipelines.
+</Note>
+
+## Hardware requirements
+
+### Development environment
+
+**Minimum specifications:**
+- **CPU**: 2-core processor, 2.0 GHz or faster
+- **RAM**: 8 GB
+- **Storage**: 10 GB available space (SSD recommended)
+- **Display**: 1366x768 resolution
+
+**Recommended specifications:**
+- **CPU**: 4-core processor, 2.5 GHz or faster
+- **RAM**: 16 GB or more
+- **Storage**: 20 GB available SSD space
+- **Display**: 1920x1080 resolution or higher
+
+### Production environment
+
+**Minimum specifications (up to 50 concurrent users):**
+- **CPU**: 4-core processor, 2.5 GHz
+- **RAM**: 16 GB
+- **Storage**: 100 GB SSD (for application and database)
+- **Network**: 100 Mbps connection
+
+**Recommended specifications (50-200 concurrent users):**
+- **CPU**: 8-core processor, 3.0 GHz or faster
+- **RAM**: 32 GB
+- **Storage**: 500 GB NVMe SSD with RAID 10 (for database redundancy)
+- **Network**: 1 Gbps connection
+
+**Database server (separate machine recommended):**
+- **CPU**: 8-core processor optimized for database workloads
+- **RAM**: 64 GB or more (SQL Server benefits from large memory allocations)
+- **Storage**: 1 TB SSD with RAID configuration for fault tolerance
+- **Backup storage**: Additional storage for database backups
+
+<Warning>
+  SQL Server performance heavily depends on available RAM and fast storage (SSD). For production deployments with significant transaction volumes, allocate at least 32 GB RAM to the database server.
+</Warning>
+
+## Operating system
+
+### Development
+
+.NET 10.0 supports cross-platform development:
+
+- **Windows**: Windows 10 version 1607 or later, Windows 11, Windows Server 2016 or later
+- **macOS**: macOS 11 Big Sur or later (Intel and Apple Silicon)
+- **Linux**: Ubuntu 20.04+, Debian 10+, Fedora 36+, CentOS Stream 8+, RHEL 8+
+
+### Production
+
+**Recommended for production:**
+- **Windows Server**: Windows Server 2019 or Windows Server 2022
+- **Linux**: Ubuntu Server 22.04 LTS, Red Hat Enterprise Linux 9
+- **Cloud platforms**: Azure App Service, AWS Elastic Beanstalk, Google Cloud Run
+
+**IIS hosting (Windows Server):**
+
+If deploying to IIS, install:
+- IIS 10.0 or later
+- ASP.NET Core Hosting Bundle for .NET 10.0
+- URL Rewrite Module (for proper routing)
+
+**Linux hosting:**
+
+For Linux deployments, use:
+- Nginx or Apache as reverse proxy
+- systemd for process management
+- Kestrel as the application server (built into ASP.NET Core)
+
+## Development tools
+
+### Code editors (choose one)
+
+**Visual Studio 2022:**
+- Version 17.8 or later
+- Workloads: "ASP.NET and web development", ".NET desktop development"
+- Free Community Edition available
+
+**Visual Studio Code:**
+- Latest stable version
+- Extensions: C# Dev Kit, C#, SQL Server (mssql)
+
+**JetBrains Rider:**
+- Version 2024.1 or later
+- Full .NET and database support built-in
+
+### Database management
+
+**SQL Server Management Studio (SSMS):**
+- Version 19.0 or later
+- Free download from Microsoft
+- Required for database schema management, trigger editing, and query optimization
+
+**Azure Data Studio:**
+- Cross-platform alternative to SSMS
+- Supports Windows, macOS, and Linux
+- Excellent for query writing and data visualization
+
+## Runtime configuration
+
+### ASP.NET Core runtime
+
+The application is configured in `Program.cs` with these services:
+
+```csharp Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllersWithViews();
+
+// Database context with SQL Server
+builder.Services.AddDbContext<TechCoreContext>(options => { 
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    options.UseSqlServer(connectionString);
+});
+
+var app = builder.Build();
+
+// Configure middleware pipeline
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseRouting();
+app.UseAuthorization();
+app.MapStaticAssets();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}")
+    .WithStaticAssets();
+
+app.Run();
+```
+
+**Required middleware:**
+- HTTPS redirection (production)
+- Static file serving
+- Routing and controllers
+- Authorization (for user authentication)
+- HSTS (HTTP Strict Transport Security in production)
+
+### Environment-specific settings
+
+**Development** (`appsettings.Development.json`):
+- Detailed logging enabled
+- Developer exception pages
+- Hot reload support
+
+**Production** (`appsettings.json`):
+- Error handling middleware
+- HSTS enabled
+- Connection string from environment variables or Azure Key Vault
+
+## Database sizing
+
+### Storage estimates
+
+Based on the TechCore schema, estimated storage per record:
+
+| Table | Size per record | Notes |
+|-------|----------------|-------|
+| `users` | ~500 bytes | Includes indexes |
+| `clientes` | ~800 bytes | Customer data with indexes |
+| `proveedores` | ~800 bytes | Supplier data |
+| `productos` | ~600 bytes | Product catalog |
+| `categoria` | ~400 bytes | Product categories |
+| `ventas` | ~300 bytes | Sales header |
+| `ventasDetalle` | ~200 bytes | Sales line items |
+| `compras` | ~300 bytes | Purchase header |
+| `comprasDetalle` | ~200 bytes | Purchase line items |
+| `planPagos` | ~150 bytes | Payment plan installments |
+| `abonosVentas` | ~150 bytes | Payment records |
+
+**Example calculation (5,000 transactions per month):**
+- Sales transactions: 5,000 × 300 bytes = 1.5 MB
+- Sales details (avg 3 items/sale): 15,000 × 200 bytes = 3 MB
+- Payment plans (40% installment sales): 2,000 × 150 bytes × 12 months = 3.6 MB
+- **Total monthly growth**: ~8-10 MB
+- **Annual growth**: ~100-120 MB
+
+<Note>
+  Actual storage requirements include indexes, which can add 30-50% overhead. Plan for at least 50 GB initial database size to accommodate growth, indexes, and transaction logs.
+</Note>
+
+## Network requirements
+
+### Ports
+
+**Development:**
+- HTTPS: 5001 (configurable in `launchSettings.json`)
+- HTTP: 5000 (redirects to HTTPS)
+
+**Production:**
+- HTTPS: 443
+- HTTP: 80 (redirects to HTTPS)
+- SQL Server: 1433 (if database is on separate server)
+
+**Firewall rules:**
+- Allow inbound on application ports (80, 443)
+- Allow outbound to SQL Server port (1433) if using remote database
+- Allow outbound for npm package downloads during build (port 443 to npmjs.com)
+
+### Bandwidth
+
+**Per user estimates:**
+- Initial page load: 500 KB - 1 MB (includes CSS, JS, images)
+- Subsequent navigation: 50-100 KB per page
+- API requests: 5-20 KB per request
+
+**Minimum bandwidth:**
+- 10 concurrent users: 5 Mbps
+- 50 concurrent users: 25 Mbps
+- 100 concurrent users: 50 Mbps
+
+## Browser requirements
+
+TechCore uses modern web standards and requires up-to-date browsers:
+
+**Supported browsers:**
+- Google Chrome 100+ (recommended)
+- Microsoft Edge 100+
+- Mozilla Firefox 100+
+- Safari 15+ (macOS/iOS)
+
+**Required browser features:**
+- JavaScript ES6+ support
+- CSS Grid and Flexbox
+- Fetch API
+- Local Storage
+
+<Warning>
+  Internet Explorer is NOT supported. The application uses modern JavaScript and CSS features that are not available in IE11 or earlier.
+</Warning>
+
+## Security requirements
+
+### SSL/TLS certificates
+
+**Development:**
+- ASP.NET Core development certificate (automatically created with SDK)
+- Trust certificate: `dotnet dev-certs https --trust`
+
+**Production:**
+- Valid SSL/TLS certificate from a trusted Certificate Authority (CA)
+- Let's Encrypt for free automated certificates
+- Azure-managed certificates if hosting on Azure App Service
+
+### Authentication
+
+Current implementation uses database-based user authentication with the `users` table. For production:
+
+**Recommended enhancements:**
+- Implement ASP.NET Core Identity for password hashing and user management
+- Add multi-factor authentication (MFA)
+- Integrate with Azure Active Directory or other identity providers
+- Use JWT tokens for API authentication
+
+### Data protection
+
+**Database:**
+- Enable Transparent Data Encryption (TDE) on SQL Server
+- Implement row-level security for multi-tenant scenarios
+- Use Always Encrypted for sensitive columns (credit card data, etc.)
+
+**Application:**
+- Store secrets in Azure Key Vault or similar
+- Enable CORS only for trusted origins
+- Implement rate limiting to prevent abuse
+
+## Backup and recovery
+
+### Database backups
+
+**Recommended schedule:**
+- Full backup: Daily at off-peak hours
+- Differential backup: Every 4 hours
+- Transaction log backup: Every 15 minutes (for point-in-time recovery)
+
+**Retention:**
+- Keep daily backups for 30 days
+- Keep weekly backups for 1 year
+- Archive monthly backups for regulatory compliance
+
+### Application backups
+
+- Application files and configuration: Include in version control (Git)
+- Custom uploads and static assets: Back up `wwwroot` directory
+- Log files: Retain for 90 days minimum
+
+## Monitoring and logging
+
+### Application logging
+
+TechCore uses ASP.NET Core's built-in logging configured in `appsettings.json`:
+
+```json
+"Logging": {
+  "LogLevel": {
+    "Default": "Information",
+    "Microsoft.AspNetCore": "Warning"
+  }
+}
+```
+
+**Recommended log levels:**
+- Development: `Information` or `Debug`
+- Production: `Warning` or `Error`
+
+**Log destinations:**
+- Console (development)
+- File system (production, with rotation)
+- Azure Application Insights (cloud deployments)
+- ELK Stack (Elasticsearch, Logstash, Kibana) for enterprise deployments
+
+### Performance monitoring
+
+**Recommended tools:**
+- SQL Server Profiler for database query analysis
+- Application Insights for application performance monitoring (APM)
+- Azure Monitor for infrastructure monitoring
+- Custom health check endpoints for uptime monitoring
+
+## Scalability considerations
+
+### Horizontal scaling
+
+For high-availability deployments:
+
+- Deploy multiple application instances behind a load balancer
+- Use sticky sessions if implementing in-memory session state
+- Implement distributed caching with Redis
+- Move database to a separate server or cluster
+
+### Vertical scaling
+
+To handle increased load on a single server:
+
+- Increase CPU cores and RAM
+- Upgrade to faster SSD storage
+- Optimize SQL Server memory allocation
+- Enable SQL Server query plan caching
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Getting started" icon="rocket" href="/getting-started">
+    Follow the setup guide to run TechCore in your environment
+  </Card>
+  <Card title="Introduction" icon="book" href="/introduction">
+    Learn about TechCore's features and architecture
+  </Card>
+</CardGroup>

@@ -1,0 +1,489 @@
+---
+title: "Sales and Purchases Tables"
+description: "Database schema documentation for ventas (sales), ventasDetalle, compras (purchases), and comprasDetalle tables"
+---
+
+## Overview
+
+The sales and purchases tables manage the core transactional data in TechCore Mini ERP. Both follow a master-detail pattern where header tables (ventas/compras) store transaction summaries, and detail tables (ventasDetalle/comprasDetalle) store line items.
+
+## Ventas Table
+
+The `ventas` table stores sales transaction headers including customer information, totals, payment terms, and credit management.
+
+### SQL Schema
+
+```sql
+CREATE TABLE ventas(
+    norden VARCHAR(50) PRIMARY KEY,
+    ordenN INT NOT NULL,
+    codclien VARCHAR(50) NOT NULL,
+    codvend INT NOT NULL,
+    fecha DATETIME DEFAULT GETDATE(),
+
+    subtotal DECIMAL(18,2) NOT NULL,
+    iva DECIMAL(18,2) NOT NULL,
+    total DECIMAL(18,2) NOT NULL,
+
+    tipoPago VARCHAR(20) DEFAULT 'CONTADO', -- CONTADO / CREDITO
+    meses INT NULL,
+    tasaInteres DECIMAL(5,2) DEFAULT 0,
+    saldo DECIMAL(18,2) NOT NULL,
+
+    nula BIT DEFAULT 0, -- 0 = valid, 1 = voided
+    estado BIT DEFAULT 1,
+
+    FOREIGN KEY (codclien) REFERENCES clientes(codclien),
+    FOREIGN KEY (codvend) REFERENCES users(id)
+)
+GO
+
+CREATE INDEX IDX_ventas_codclien ON ventas(codclien)
+GO
+CREATE INDEX IDX_ventas_codvend ON ventas(codvend)
+GO
+CREATE INDEX IDX_ventas_fecha ON ventas(fecha)
+GO
+CREATE INDEX IDX_ventas_tipoPago ON ventas(tipoPago)
+GO
+CREATE INDEX IDX_ventas_nula ON ventas(nula) WHERE nula = 0
+GO
+```
+
+### Columns
+
+<ParamField path="norden" type="VARCHAR(50)">
+  Primary key. Order/invoice number that uniquely identifies the sales transaction.
+</ParamField>
+
+<ParamField path="ordenN" type="INT">
+  Sequential order number. Used for sorting and referencing sales orders.
+</ParamField>
+
+<ParamField path="codclien" type="VARCHAR(50)">
+  Foreign key to `clientes` table. Identifies the customer for this sale. Required field.
+</ParamField>
+
+<ParamField path="codvend" type="INT">
+  Foreign key to `users` table. Identifies the salesperson/user who processed the transaction. Required field.
+</ParamField>
+
+<ParamField path="fecha" type="DATETIME">
+  Transaction date/time. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+<ParamField path="subtotal" type="DECIMAL(18,2)">
+  Sum of all line items before tax. Required field. Calculated from ventasDetalle records.
+</ParamField>
+
+<ParamField path="iva" type="DECIMAL(18,2)">
+  Tax amount (IVA = Impuesto al Valor Agregado / Value Added Tax). Required field.
+</ParamField>
+
+<ParamField path="total" type="DECIMAL(18,2)">
+  Total amount including tax (subtotal + iva). Required field.
+</ParamField>
+
+<ParamField path="tipoPago" type="VARCHAR(20)">
+  Payment type. Defaults to 'CONTADO' (cash). Valid values: 'CONTADO' (cash/immediate) or 'CREDITO' (credit/installments).
+</ParamField>
+
+<ParamField path="meses" type="INT">
+  Number of months for credit payments. Nullable (only used when tipoPago = 'CREDITO').
+</ParamField>
+
+<ParamField path="tasaInteres" type="DECIMAL(5,2)">
+  Interest rate for credit payments (percentage). Defaults to 0. Used to calculate installment amounts.
+</ParamField>
+
+<ParamField path="saldo" type="DECIMAL(18,2)">
+  Remaining balance for credit sales. Required field. Updated automatically by TR_ActualizarSaldo trigger when payments are received.
+</ParamField>
+
+<ParamField path="nula" type="BIT">
+  Void/cancellation flag. Defaults to 0 (valid). Set to 1 to void the transaction without deleting it. Voided sales don't affect inventory.
+</ParamField>
+
+<ParamField path="estado" type="BIT">
+  Status flag. Defaults to 1 (active).
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `norden`
+- **Foreign Keys**: 
+  - `codclien` references `clientes(codclien)`
+  - `codvend` references `users(id)`
+
+### Indexes
+
+- **IDX_ventas_codclien**: Customer-based queries
+- **IDX_ventas_codvend**: Salesperson performance reports
+- **IDX_ventas_fecha**: Date range queries and reports
+- **IDX_ventas_tipoPago**: Payment type filtering
+- **IDX_ventas_nula**: Filtered index for non-voided sales (optimized for active transactions)
+
+### C# Model
+
+```csharp
+public partial class Venta
+{
+    public string Norden { get; set; } = null!;
+    public int OrdenN { get; set; }
+    public string Codclien { get; set; } = null!;
+    public int Codvend { get; set; }
+    public DateTime? Fecha { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal Iva { get; set; }
+    public decimal Total { get; set; }
+    public string? TipoPago { get; set; }
+    public int? Meses { get; set; }
+    public decimal? TasaInteres { get; set; }
+    public decimal Saldo { get; set; }
+    public bool? Nula { get; set; }
+    public bool? Estado { get; set; }
+
+    public virtual ICollection<AbonosVenta> AbonosVenta { get; set; } = new List<AbonosVenta>();
+    public virtual Cliente CodclienNavigation { get; set; } = null!;
+    public virtual User CodvendNavigation { get; set; } = null!;
+    public virtual ICollection<PlanPago> PlanPagos { get; set; } = new List<PlanPago>();
+    public virtual ICollection<VentasDetalle> VentasDetalles { get; set; } = new List<VentasDetalle>();
+}
+```
+
+---
+
+## VentasDetalle Table
+
+The `ventasDetalle` table stores individual line items for each sale, including product details, quantities, and pricing.
+
+### SQL Schema
+
+```sql
+CREATE TABLE ventasDetalle(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    codprod VARCHAR(50) NOT NULL,
+    cantidad INT NOT NULL,
+    pventa DECIMAL(18,2) NOT NULL,
+    subtotal DECIMAL(18,2) NOT NULL,
+
+    FOREIGN KEY (norden) 
+        REFERENCES ventas(norden)
+        ON DELETE CASCADE,   
+
+    FOREIGN KEY (codprod) 
+        REFERENCES productos(codprod)
+)
+GO
+
+CREATE INDEX IDX_ventasDetalle_norden ON ventasDetalle(norden)
+GO
+CREATE INDEX IDX_ventasDetalle_codprod ON ventasDetalle(codprod)
+GO
+```
+
+### Columns
+
+<ParamField path="id" type="INT">
+  Primary key with auto-increment. Uniquely identifies each line item.
+</ParamField>
+
+<ParamField path="norden" type="VARCHAR(50)">
+  Foreign key to `ventas` table. Links the line item to its parent sale. CASCADE DELETE ensures line items are removed when the sale is deleted.
+</ParamField>
+
+<ParamField path="codprod" type="VARCHAR(50)">
+  Foreign key to `productos` table. Identifies the product being sold. Required field.
+</ParamField>
+
+<ParamField path="cantidad" type="INT">
+  Quantity sold. Required field.
+</ParamField>
+
+<ParamField path="pventa" type="DECIMAL(18,2)">
+  Unit sale price at the time of transaction. Required field. Preserves historical pricing even if product prices change.
+</ParamField>
+
+<ParamField path="subtotal" type="DECIMAL(18,2)">
+  Line item subtotal (cantidad * pventa). Required field.
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `id`
+- **Foreign Keys**: 
+  - `norden` references `ventas(norden)` ON DELETE CASCADE
+  - `codprod` references `productos(codprod)`
+
+### Indexes
+
+- **IDX_ventasDetalle_norden**: Line item lookups by order
+- **IDX_ventasDetalle_codprod**: Product sales history queries
+
+### C# Model
+
+```csharp
+public partial class VentasDetalle
+{
+    public int Id { get; set; }
+    public string Norden { get; set; } = null!;
+    public string Codprod { get; set; } = null!;
+    public int Cantidad { get; set; }
+    public decimal Pventa { get; set; }
+    public decimal Subtotal { get; set; }
+
+    public virtual Producto CodprodNavigation { get; set; } = null!;
+    public virtual Venta NordenNavigation { get; set; } = null!;
+}
+```
+
+---
+
+## Compras Table
+
+The `compras` table stores purchase order headers including supplier information and totals.
+
+### SQL Schema
+
+```sql
+CREATE TABLE compras
+(
+    norden VARCHAR(50) PRIMARY KEY,
+    ordenN INT NOT NULL,
+    codprov VARCHAR(50) NOT NULL,
+    codusu INT NOT NULL,
+    fecha DATETIME DEFAULT GETDATE(),
+    subtotal DECIMAL(18,2) NOT NULL,
+    iva DECIMAL(18,2) NOT NULL,
+    total DECIMAL(18,2) NOT NULL,
+    estado INT DEFAULT 1,
+
+    FOREIGN KEY (codprov) REFERENCES proveedores(codprovee),
+    FOREIGN KEY (codusu) REFERENCES users(id)
+)
+GO
+
+CREATE INDEX IDX_compras_codprov ON compras(codprov)
+GO
+CREATE INDEX IDX_compras_codusu ON compras(codusu)
+GO
+CREATE INDEX IDX_compras_fecha ON compras(fecha)
+GO
+CREATE INDEX IDX_compras_estado ON compras(estado)
+GO
+```
+
+### Columns
+
+<ParamField path="norden" type="VARCHAR(50)">
+  Primary key. Purchase order number that uniquely identifies the transaction.
+</ParamField>
+
+<ParamField path="ordenN" type="INT">
+  Sequential order number. Used for sorting and referencing purchase orders.
+</ParamField>
+
+<ParamField path="codprov" type="VARCHAR(50)">
+  Foreign key to `proveedores` table. Identifies the supplier. Required field.
+</ParamField>
+
+<ParamField path="codusu" type="INT">
+  Foreign key to `users` table. Identifies the user who processed the purchase. Required field.
+</ParamField>
+
+<ParamField path="fecha" type="DATETIME">
+  Transaction date/time. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+<ParamField path="subtotal" type="DECIMAL(18,2)">
+  Sum of all line items before tax. Required field. Calculated from comprasDetalle records.
+</ParamField>
+
+<ParamField path="iva" type="DECIMAL(18,2)">
+  Tax amount. Required field.
+</ParamField>
+
+<ParamField path="total" type="DECIMAL(18,2)">
+  Total amount including tax (subtotal + iva). Required field.
+</ParamField>
+
+<ParamField path="estado" type="INT">
+  Status flag. Defaults to 1 (active). Uses INT for potential future status codes.
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `norden`
+- **Foreign Keys**: 
+  - `codprov` references `proveedores(codprovee)`
+  - `codusu` references `users(id)`
+
+### Indexes
+
+- **IDX_compras_codprov**: Supplier-based queries
+- **IDX_compras_codusu**: User activity tracking
+- **IDX_compras_fecha**: Date range queries
+- **IDX_compras_estado**: Status filtering
+
+### C# Model
+
+```csharp
+public partial class Compra
+{
+    public string Norden { get; set; } = null!;
+    public int OrdenN { get; set; }
+    public string Codprov { get; set; } = null!;
+    public int Codusu { get; set; }
+    public DateTime? Fecha { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal Iva { get; set; }
+    public decimal Total { get; set; }
+    public int? Estado { get; set; }
+
+    public virtual Proveedore CodprovNavigation { get; set; } = null!;
+    public virtual User CodusuNavigation { get; set; } = null!;
+    public virtual ICollection<ComprasDetalle> ComprasDetalles { get; set; } = new List<ComprasDetalle>();
+}
+```
+
+---
+
+## ComprasDetalle Table
+
+The `comprasDetalle` table stores individual line items for each purchase order.
+
+### SQL Schema
+
+```sql
+CREATE TABLE comprasDetalle
+(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    codprod VARCHAR(50) NOT NULL,
+    cantidad INT NOT NULL,
+    precio DECIMAL(18,2) NOT NULL,
+    subtotal DECIMAL(18,2) NOT NULL,
+
+    FOREIGN KEY (norden) 
+        REFERENCES compras(norden)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (codprod) REFERENCES productos(codprod)
+)
+GO
+
+CREATE INDEX IDX_comprasDetalle_norden ON comprasDetalle(norden)
+GO
+CREATE INDEX IDX_comprasDetalle_codprod ON comprasDetalle(codprod)
+GO
+```
+
+### Columns
+
+<ParamField path="id" type="INT">
+  Primary key with auto-increment. Uniquely identifies each line item.
+</ParamField>
+
+<ParamField path="norden" type="VARCHAR(50)">
+  Foreign key to `compras` table. Links the line item to its parent purchase order. CASCADE DELETE ensures line items are removed when the purchase is deleted.
+</ParamField>
+
+<ParamField path="codprod" type="VARCHAR(50)">
+  Foreign key to `productos` table. Identifies the product being purchased. Required field.
+</ParamField>
+
+<ParamField path="cantidad" type="INT">
+  Quantity purchased. Required field.
+</ParamField>
+
+<ParamField path="precio" type="DECIMAL(18,2)">
+  Unit purchase price at the time of transaction. Required field. Preserves historical pricing.
+</ParamField>
+
+<ParamField path="subtotal" type="DECIMAL(18,2)">
+  Line item subtotal (cantidad * precio). Required field.
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `id`
+- **Foreign Keys**: 
+  - `norden` references `compras(norden)` ON DELETE CASCADE
+  - `codprod` references `productos(codprod)`
+
+### Indexes
+
+- **IDX_comprasDetalle_norden**: Line item lookups by purchase order
+- **IDX_comprasDetalle_codprod**: Product purchase history queries
+
+### C# Model
+
+```csharp
+public partial class ComprasDetalle
+{
+    public int Id { get; set; }
+    public string Norden { get; set; } = null!;
+    public string Codprod { get; set; } = null!;
+    public int Cantidad { get; set; }
+    public decimal Precio { get; set; }
+    public decimal Subtotal { get; set; }
+
+    public virtual Producto CodprodNavigation { get; set; } = null!;
+    public virtual Compra NordenNavigation { get; set; } = null!;
+}
+```
+
+## Entity Relationships
+
+```
+ventas (1) ----< (*) ventasDetalle
+  |                      |
+  |                      +-----> (*) productos
+  |
+  +-----> (1) clientes
+  |
+  +-----> (1) users
+  |
+  +----< (*) planPagos
+  |
+  +----< (*) abonosVentas
+
+compras (1) ----< (*) comprasDetalle
+  |                       |
+  |                       +-----> (*) productos
+  |
+  +-----> (1) proveedores
+  |
+  +-----> (1) users
+```
+
+## Inventory Trigger
+
+Stock is automatically decreased when sales are created:
+
+```sql
+CREATE TRIGGER TR_DisminuirStock
+ON ventasDetalle
+AFTER INSERT
+AS
+BEGIN
+    UPDATE p
+    SET p.stock = p.stock - i.cantidad
+    FROM productos p
+    INNER JOIN inserted i ON p.codprod = i.codprod
+    INNER JOIN ventas v ON v.norden = i.norden
+    WHERE v.nula = 0
+END
+```
+
+**Note**: Stock is only decreased for valid sales (nula = 0). Voided sales don't affect inventory.
+
+## Usage Notes
+
+- Both sales and purchases use master-detail pattern with CASCADE DELETE on detail tables
+- Historical pricing is preserved in detail tables (pventa/precio)
+- The `nula` field in ventas allows voiding transactions without deletion
+- Sales support credit terms with installment tracking via planPagos table
+- All monetary values use DECIMAL(18,2) for precise calculations
+- Indexes are optimized for common reporting queries (by date, customer, supplier, salesperson)

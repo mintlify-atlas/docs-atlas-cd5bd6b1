@@ -1,0 +1,202 @@
+---
+title: Git Workflow
+description: Complete guide to Git version control workflow for TechCore Mini ERP development
+---
+
+This guide covers the Git workflow used for TechCore Mini ERP development, from initial setup to collaborating with remote repositories.
+
+## Initial Configuration
+
+Before you begin working with Git, configure your identity globally (only needed once).
+
+<Steps>
+  <Step title="Set your username">
+    ```bash
+    git config --global user.name "Tu Nombre"
+    ```
+    This establishes your name for all commits.
+  </Step>
+
+  <Step title="Set your email">
+    ```bash
+    git config --global user.email "tu@email.com"
+    ```
+    This defines your email address for commits.
+  </Step>
+
+  <Step title="Verify configuration">
+    ```bash
+    git config --list
+    ```
+    Review your current Git configuration.
+  </Step>
+</Steps>
+
+## Basic Local Commands
+
+These commands help you manage a local repository.
+
+<Steps>
+  <Step title="Initialize repository">
+    ```bash
+    git init
+    ```
+    Creates a Git repository in the current folder.
+  </Step>
+
+  <Step title="Check status">
+    ```bash
+    git status
+    ```
+    Shows the state of modified, staged, or untracked files.
+  </Step>
+
+  <Step title="Stage changes">
+    ```bash
+    git add <archivo>
+    # or stage all changes
+    git add .
+    ```
+    Adds changes to the staging area.
+  </Step>
+
+  <Step title="Commit changes">
+    ```bash
+    git commit -m "Mensaje descriptivo"
+    ```
+    Saves changes with a descriptive message.
+  </Step>
+
+  <Step title="View history">
+    ```bash
+    git log
+    # or compact view
+    git log --oneline
+    ```
+    Views the commit history.
+  </Step>
+</Steps>
+
+## SSH Setup for Remote Repositories
+
+SSH provides secure authentication without passwords. Keys are generated in `~/.ssh` (use Git Bash on Windows).
+
+<Steps>
+  <Step title="Generate SSH key pair">
+    ```bash
+    ssh-keygen -t rsa -b 4096 -C "tu@email.com"
+    ```
+    Press Enter for default path and no initial passphrase.
+  </Step>
+
+  <Step title="Start SSH agent">
+    ```bash
+    eval $(ssh-agent -s)
+    ```
+    Initializes the SSH agent.
+  </Step>
+
+  <Step title="Add private key">
+    ```bash
+    ssh-add ~/.ssh/id_rsa
+    ```
+    Adds your private key to the agent.
+  </Step>
+
+  <Step title="Copy public key">
+    ```bash
+    cat ~/.ssh/id_rsa.pub
+    ```
+    Copy the output and add it to GitHub (Settings > SSH keys).
+  </Step>
+
+  <Step title="Test connection">
+    ```bash
+    ssh -T git@github.com
+    ```
+    Should display "Hi username!" if successful.
+  </Step>
+</Steps>
+
+## Working with Remote Repositories
+
+Connect with remote repositories using SSH URLs (e.g., `git@github.com:usuario/repo.git`).
+
+### Cloning and Adding Remotes
+
+<Steps>
+  <Step title="Clone a repository">
+    ```bash
+    git clone <URL-SSH>
+    ```
+    Copies a remote repository to your local machine.
+  </Step>
+
+  <Step title="Add a remote">
+    ```bash
+    git remote add origin <URL-SSH>
+    ```
+    Links your local repository to a remote.
+  </Step>
+
+  <Step title="List remotes">
+    ```bash
+    git remote -v
+    ```
+    Shows configured remote repositories.
+  </Step>
+</Steps>
+
+## Branch Management
+
+Branches enable parallel development workflows, such as feature branches.
+
+### Basic Branch Operations
+
+```bash
+# List local branches
+git branch
+
+# Create a new branch
+git branch <nombre-rama>
+
+# Switch to a branch
+git checkout <rama>
+# or using newer syntax
+git switch <rama>
+
+# Create and switch to a new branch
+git checkout -b <rama>
+
+# Merge changes from another branch
+git merge <rama>
+```
+
+## Synchronizing with Remotes
+
+Use SSH for secure push operations.
+
+### Push and Pull Commands
+
+```bash
+# Push commits to remote
+git push origin <rama>
+
+# Pull and merge remote changes
+git pull origin <rama>
+
+# Initial push with tracking
+git push -u origin <rama>
+
+# Delete remote branch
+git push origin --delete <rama>
+```
+
+## Best Practices
+
+- Write clear, descriptive commit messages
+- Commit frequently with logical units of work
+- Always pull before pushing to avoid conflicts
+- Use feature branches for new development
+- Keep the main/master branch stable
+- Review changes with `git status` and `git diff` before committing

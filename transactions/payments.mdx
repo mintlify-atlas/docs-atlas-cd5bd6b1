@@ -1,0 +1,411 @@
+---
+title: Payment Processing
+description: Learn how to record and manage customer payments (abonos) for credit sales in TechCore Mini ERP
+---
+
+## Overview
+
+The payment system (abonos) allows customers to make payments against credit sales. Each payment reduces the outstanding balance and can be applied to specific installments in the payment plan. The system automatically updates balances and marks installments as paid through database triggers.
+
+## Payment Entity
+
+The `AbonosVenta` entity represents a single payment transaction.
+
+### Entity Fields
+
+<ParamField path="Id" type="int" required>
+  Auto-generated payment identifier (primary key)
+</ParamField>
+
+<ParamField path="Norden" type="string" required>
+  Sale order reference (foreign key to `ventas`)
+</ParamField>
+
+<ParamField path="Fecha" type="DateTime">
+  Payment date and time (defaults to current datetime)
+</ParamField>
+
+<ParamField path="Monto" type="decimal" required>
+  Payment amount received
+</ParamField>
+
+<ParamField path="NumeroCuota" type="int" required>
+  Installment number this payment applies to
+</ParamField>
+
+### Relationships
+
+- **NordenNavigation**: Parent sale record (`Venta`)
+
+## Recording a Payment
+
+<Steps>
+  <Step title="Verify Sale Information">
+    Before recording a payment, verify:
+    - The sale exists and is a credit sale (`TipoPago = 'CREDITO'`)
+    - The sale is not voided (`Nula = 0`)
+    - The sale has an outstanding balance (`Saldo > 0`)
+    
+    ```csharp
+    var sale = await context.Ventas
+        .FirstOrDefaultAsync(v => v.Norden == orderNumber);
+    
+    if (sale == null || sale.TipoPago != "CREDITO") {
+        throw new InvalidOperationException("Invalid credit sale");
+    }
+    
+    if (sale.Nula == true) {
+        throw new InvalidOperationException("Cannot record payment for voided sale");
+    }
+    
+    if (sale.Saldo <= 0) {
+        throw new InvalidOperationException("Sale is already paid in full");
+    }
+    ```
+  </Step>
+  
+  <Step title="Identify Target Installment">
+    Determine which installment the payment is for. Typically, this would be the next unpaid installment:
+    
+    ```csharp
+    var nextInstallment = await context.PlanPagos
+        .Where(p => p.Norden == orderNumber && p.Pagada == false)
+        .OrderBy(p => p.NumeroCuota)
+        .FirstOrDefaultAsync();
+    
+    if (nextInstallment == null) {
+        throw new InvalidOperationException("No pending installments found");
+    }
+    ```
+  </Step>
+  
+  <Step title="Validate Payment Amount">
+    Ensure the payment amount is valid:
+    
+    ```csharp
+    if (amount <= 0) {
+        throw new ArgumentException("Payment amount must be greater than zero");
+    }
+    
+    if (amount > sale.Saldo) {
+        throw new ArgumentException(
+            $"Payment amount ({amount}) exceeds outstanding balance ({sale.Saldo})"
+        );
+    }
+    ```
+  </Step>
+  
+  <Step title="Create Payment Record">
+    Insert the payment record into the `AbonosVenta` table:
+    
+    ```csharp
+    var payment = new AbonosVenta {
+        Norden = orderNumber,
+        Fecha = DateTime.Now,
+        Monto = amount,
+        NumeroCuota = nextInstallment.NumeroCuota
+    };
+    
+    context.AbonosVentas.Add(payment);
+    await context.SaveChangesAsync();
+    ```
+  </Step>
+  
+  <Step title="Automatic Updates via Trigger">
+    When the payment is inserted, the `TR_ActualizarSaldo` trigger automatically:
+    
+    1. **Reduces the sale balance**:
+       ```sql
+       UPDATE ventas
+       SET saldo = saldo - payment.monto
+       WHERE norden = payment.norden
+       ```
+    
+    2. **Marks the installment as paid**:
+       ```sql
+       UPDATE planPagos
+       SET pagada = 1
+       WHERE norden = payment.norden 
+         AND numeroCuota = payment.numeroCuota
+       ```
+    
+    No additional code is required - the database handles these updates automatically.
+  </Step>
+</Steps>
+
+## Payment Workflow Example
+
+Consider a credit sale with the following details:
+
+**Sale Information:**
+- Order Number: ORD-2026-001
+- Total: $1,236.00 (including interest)
+- Months: 4
+- Monthly Payment: $309.00
+- Current Balance: $1,236.00
+
+**Recording First Payment:**
+
+```csharp
+var payment1 = new AbonosVenta {
+    Norden = "ORD-2026-001",
+    Fecha = DateTime.Now,
+    Monto = 309.00m,
+    NumeroCuota = 1
+};
+
+context.AbonosVentas.Add(payment1);
+await context.SaveChangesAsync();
+```
+
+**After Trigger Execution:**
+- Sale balance updated: $1,236.00 - $309.00 = $927.00
+- Installment #1 marked as paid (`Pagada = 1`)
+
+**Recording Second Payment:**
+
+```csharp
+var payment2 = new AbonosVenta {
+    Norden = "ORD-2026-001",
+    Fecha = DateTime.Now,
+    Monto = 309.00m,
+    NumeroCuota = 2
+};
+
+context.AbonosVentas.Add(payment2);
+await context.SaveChangesAsync();
+```
+
+**After Trigger Execution:**
+- Sale balance updated: $927.00 - $309.00 = $618.00
+- Installment #2 marked as paid (`Pagada = 1`)
+
+## Partial Payments
+
+The system allows partial payments that don't cover the full installment amount:
+
+```csharp
+var partialPayment = new AbonosVenta {
+    Norden = "ORD-2026-001",
+    Fecha = DateTime.Now,
+    Monto = 150.00m,  // Less than the $309.00 installment
+    NumeroCuota = 3
+};
+```
+
+**Important Notes:**
+- The trigger will still mark the installment as paid (`Pagada = 1`)
+- The balance will be reduced by the actual amount paid ($150.00)
+- You may need business logic to handle partially paid installments
+- Consider tracking partial payments separately if needed
+
+## Overpayments
+
+If a customer pays more than the installment amount:
+
+```csharp
+var overpayment = new AbonosVenta {
+    Norden = "ORD-2026-001",
+    Fecha = DateTime.Now,
+    Monto = 450.00m,  // More than the $309.00 installment
+    NumeroCuota = 3
+};
+```
+
+**Result:**
+- Installment #3 is marked as paid
+- Balance is reduced by the full $450.00
+- Excess amount reduces the overall balance
+- Customer still owes remaining installments, but total debt is lower
+
+## Payment History
+
+View all payments for a sale:
+
+```csharp
+var paymentHistory = await context.AbonosVentas
+    .Where(a => a.Norden == orderNumber)
+    .OrderBy(a => a.Fecha)
+    .Select(a => new {
+        a.Id,
+        a.Fecha,
+        a.Monto,
+        a.NumeroCuota
+    })
+    .ToListAsync();
+```
+
+**Example Output:**
+
+| Payment ID | Date | Amount | Installment |
+|------------|------|--------|-------------|
+| 1 | 2026-02-15 | $309.00 | 1 |
+| 2 | 2026-03-15 | $309.00 | 2 |
+| 3 | 2026-04-10 | $150.00 | 3 |
+| 4 | 2026-04-20 | $159.00 | 3 |
+
+## Account Statement
+
+Generate a complete account statement showing sales and payments:
+
+```csharp
+var statement = await context.Ventas
+    .Where(v => v.Codclien == customerCode && v.TipoPago == "CREDITO")
+    .Select(v => new {
+        v.Norden,
+        v.Fecha,
+        v.Total,
+        v.Saldo,
+        Payments = v.AbonosVenta.Select(a => new {
+            a.Fecha,
+            a.Monto,
+            a.NumeroCuota
+        }).ToList(),
+        TotalPaid = v.AbonosVenta.Sum(a => a.Monto)
+    })
+    .ToListAsync();
+```
+
+## Database Trigger Details
+
+The `TR_ActualizarSaldo` trigger handles automatic updates:
+
+```sql
+CREATE TRIGGER TR_ActualizarSaldo
+ON abonosVentas
+AFTER INSERT
+AS
+BEGIN
+    -- Update sale balance
+    UPDATE v
+    SET v.saldo = v.saldo - i.monto
+    FROM ventas v
+    INNER JOIN inserted i ON v.norden = i.norden
+
+    -- Mark installment as paid
+    UPDATE pp
+    SET pagada = 1
+    FROM planPagos pp
+    INNER JOIN inserted i 
+        ON pp.norden = i.norden 
+        AND pp.numeroCuota = i.numeroCuota
+END
+```
+
+This ensures data consistency without requiring additional application code.
+
+## Cascade Deletion
+
+Payments are configured with `ON DELETE CASCADE`:
+
+```sql
+FOREIGN KEY (norden) REFERENCES ventas(norden) ON DELETE CASCADE
+```
+
+This means:
+- Deleting a sale automatically deletes all associated payment records
+- Ensures referential integrity
+- Simplifies data cleanup for voided sales
+
+## Database Schema
+
+```sql
+CREATE TABLE abonosVentas(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    fecha DATETIME DEFAULT GETDATE(),
+    monto DECIMAL(18,2) NOT NULL,
+    numeroCuota INT NOT NULL,
+    FOREIGN KEY (norden) REFERENCES ventas(norden) ON DELETE CASCADE
+)
+```
+
+## Performance Optimization
+
+The database includes optimized indexes:
+
+```sql
+-- Find payments by sale order
+CREATE INDEX IDX_abonosVentas_norden ON abonosVentas(norden)
+
+-- Query payments by date for reports
+CREATE INDEX IDX_abonosVentas_fecha ON abonosVentas(fecha)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Validate Before Recording">
+    Always validate payment data before inserting:
+    ```csharp
+    // Check amount is positive
+    if (amount <= 0) throw new ArgumentException("Invalid amount");
+    
+    // Verify installment exists
+    var installment = await context.PlanPagos
+        .FirstOrDefaultAsync(p => 
+            p.Norden == orderNumber && 
+            p.NumeroCuota == installmentNumber
+        );
+    
+    if (installment == null) {
+        throw new InvalidOperationException("Installment not found");
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Track Payment Methods">
+    Consider adding a payment method field to track how customers pay:
+    ```csharp
+    public enum PaymentMethod {
+        Cash,
+        Check,
+        CreditCard,
+        BankTransfer,
+        MobilePay
+    }
+    
+    // Add to AbonosVenta model
+    public PaymentMethod? MetodoPago { get; set; }
+    ```
+  </Accordion>
+  
+  <Accordion title="Generate Receipts">
+    Create payment receipts for customer records:
+    ```csharp
+    var receipt = new PaymentReceipt {
+        ReceiptNumber = GenerateReceiptNumber(),
+        PaymentId = payment.Id,
+        CustomerName = sale.CodclienNavigation.Nombre,
+        Amount = payment.Monto,
+        Date = payment.Fecha,
+        OrderNumber = payment.Norden,
+        InstallmentNumber = payment.NumeroCuota
+    };
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Transaction Failures">
+    Use database transactions to ensure consistency:
+    ```csharp
+    using var transaction = await context.Database.BeginTransactionAsync();
+    try {
+        context.AbonosVentas.Add(payment);
+        await context.SaveChangesAsync();
+        
+        // Additional operations if needed
+        
+        await transaction.CommitAsync();
+    } catch {
+        await transaction.RollbackAsync();
+        throw;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Sales](/transactions/sales) - Creating and managing sales
+- [Payment Plans](/transactions/payment-plans) - Understanding installment schedules
+- [Customers](/entities/customers) - Customer account management

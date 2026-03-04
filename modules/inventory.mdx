@@ -1,0 +1,409 @@
+---
+title: Inventory
+description: Track stock levels, monitor inventory movements, and manage reorder alerts in TechCore Mini ERP
+---
+
+The inventory module provides real-time visibility into stock levels, automated inventory adjustments, and intelligent reorder point monitoring to help you maintain optimal inventory levels.
+
+## Inventory tracking
+
+Inventory is tracked at the product level through the `Producto` model. Every product maintains its current stock quantity and minimum stock threshold.
+
+### Stock fields
+
+<ResponseField name="Stock" type="int">
+  Current quantity available in inventory. Updated automatically with sales and purchases. Defaults to 0
+</ResponseField>
+
+<ResponseField name="StockMinimo" type="int">
+  Reorder point threshold. When stock falls below this level, the product needs replenishment. Defaults to 5
+</ResponseField>
+
+## Automated inventory adjustments
+
+TechCore Mini ERP automatically manages inventory levels through database triggers, eliminating manual stock adjustments and reducing errors.
+
+### Stock decrease on sales
+
+When products are sold, inventory decreases automatically:
+
+<Steps>
+  <Step title="Sale created">
+    A new sales order is created with line items in the `ventasDetalle` table.
+  </Step>
+  
+  <Step title="Trigger executes">
+    The `TR_DisminuirStock` trigger fires immediately after the sale detail is inserted.
+  </Step>
+  
+  <Step title="Stock updated">
+    Product stock is decreased by the quantity sold, but only if the sale is valid (not voided).
+  </Step>
+  
+  <Step title="Inventory synchronized">
+    The product's `Stock` field now reflects the current available quantity.
+  </Step>
+</Steps>
+
+<Info>
+  Voided sales (where `ventas.nula = 1`) do not affect inventory. The trigger only processes valid transactions.
+</Info>
+
+### Database trigger implementation
+
+```sql
+CREATE TRIGGER TR_DisminuirStock
+ON ventasDetalle
+AFTER INSERT
+AS
+BEGIN
+    UPDATE p
+    SET p.stock = p.stock - i.cantidad
+    FROM productos p
+    INNER JOIN inserted i ON p.codprod = i.codprod
+    INNER JOIN ventas v ON v.norden = i.norden
+    WHERE v.nula = 0
+END
+```
+
+### Stock increase on purchases
+
+When products are received from suppliers, inventory levels increase through the purchase order process. Purchase details are recorded in the `comprasDetalle` table, and stock quantities are updated accordingly.
+
+## Reorder point monitoring
+
+The system provides intelligent low stock detection to prevent stockouts.
+
+### How reorder points work
+
+<CardGroup cols={2}>
+  <Card title="Set minimum levels" icon="gauge-min">
+    Configure `StockMinimo` for each product based on sales velocity and supplier lead time
+  </Card>
+  
+  <Card title="Automatic detection" icon="magnifying-glass">
+    The indexed `IDX_productos_stock` enables fast queries to identify products below reorder points
+  </Card>
+  
+  <Card title="Reorder alerts" icon="bell">
+    Generate reports of products where `Stock < StockMinimo` to trigger purchase orders
+  </Card>
+  
+  <Card title="Prevent stockouts" icon="shield-check">
+    Proactive reordering ensures continuous product availability
+  </Card>
+</CardGroup>
+
+### Reorder point query
+
+Identify products requiring replenishment:
+
+```sql
+SELECT codprod, descripcion, stock, stockMinimo
+FROM productos
+WHERE stock < stockMinimo
+AND estado = 1
+ORDER BY (stockMinimo - stock) DESC
+```
+
+This query returns active products sorted by urgency (largest shortage first).
+
+## Inventory valuation
+
+Calculate inventory value using purchase and sale prices stored in the product catalog.
+
+### Valuation methods
+
+<Tabs>
+  <Tab title="Cost value">
+    Calculate inventory value at purchase cost:
+    
+    ```sql
+    SELECT 
+        SUM(stock * precioCompra) AS inventoryAtCost
+    FROM productos
+    WHERE estado = 1
+    ```
+    
+    This represents the total capital invested in current inventory.
+  </Tab>
+  
+  <Tab title="Retail value">
+    Calculate inventory value at selling price:
+    
+    ```sql
+    SELECT 
+        SUM(stock * precioVenta) AS inventoryAtRetail
+    FROM productos
+    WHERE estado = 1
+    ```
+    
+    This represents the potential revenue if all inventory is sold.
+  </Tab>
+  
+  <Tab title="Profit potential">
+    Calculate potential profit in current inventory:
+    
+    ```sql
+    SELECT 
+        SUM(stock * (precioVenta - precioCompra)) AS potentialProfit
+    FROM productos
+    WHERE estado = 1
+    ```
+    
+    This shows the gross profit available in existing stock.
+  </Tab>
+</Tabs>
+
+## Inventory movements
+
+Track how inventory changes over time through transaction details.
+
+### Sales movements
+
+Query sales history to see inventory outflows:
+
+```sql
+SELECT 
+    vd.codprod,
+    p.descripcion,
+    v.fecha,
+    vd.cantidad AS quantitySold,
+    vd.pventa AS salePrice
+FROM ventasDetalle vd
+INNER JOIN productos p ON vd.codprod = p.codprod
+INNER JOIN ventas v ON vd.norden = v.norden
+WHERE v.nula = 0
+ORDER BY v.fecha DESC
+```
+
+### Purchase movements
+
+Query purchase history to see inventory inflows:
+
+```sql
+SELECT 
+    cd.codprod,
+    p.descripcion,
+    c.fecha,
+    cd.cantidad AS quantityReceived,
+    cd.precio AS purchasePrice
+FROM comprasDetalle cd
+INNER JOIN productos p ON cd.codprod = p.codprod
+INNER JOIN compras c ON cd.norden = c.norden
+ORDER BY c.fecha DESC
+```
+
+## User workflows
+
+### Monitoring stock levels
+
+<Steps>
+  <Step title="View current inventory">
+    Access the products list to see current `Stock` levels for all active products.
+  </Step>
+  
+  <Step title="Identify low stock">
+    Filter products where stock is below the minimum threshold to identify reorder needs.
+  </Step>
+  
+  <Step title="Review by category">
+    Group inventory views by product category to analyze stock distribution.
+  </Step>
+  
+  <Step title="Check stock value">
+    Calculate total inventory value to understand capital tied up in stock.
+  </Step>
+</Steps>
+
+### Setting reorder points
+
+<Tip>
+  Set `StockMinimo` using this formula:
+  
+  **Minimum Stock = (Average Daily Sales × Lead Time) + Safety Stock**
+  
+  Where:
+  - Average Daily Sales = Monthly sales ÷ 30
+  - Lead Time = Days from order to delivery
+  - Safety Stock = Buffer for demand variability (typically 3-7 days)
+</Tip>
+
+<Steps>
+  <Step title="Analyze sales velocity">
+    Review historical sales data to determine average daily demand for each product.
+  </Step>
+  
+  <Step title="Determine lead time">
+    Identify supplier lead times from order placement to inventory receipt.
+  </Step>
+  
+  <Step title="Calculate safety stock">
+    Add buffer stock to account for demand spikes and delivery delays.
+  </Step>
+  
+  <Step title="Update StockMinimo">
+    Set the minimum stock threshold in the product record.
+  </Step>
+  
+  <Step title="Monitor and adjust">
+    Review reorder points quarterly and adjust based on changing demand patterns.
+  </Step>
+</Steps>
+
+### Creating purchase orders from low stock
+
+<Steps>
+  <Step title="Generate low stock report">
+    Query products where `Stock < StockMinimo` to identify items needing replenishment.
+  </Step>
+  
+  <Step title="Group by supplier">
+    Organize products by supplier to consolidate purchase orders.
+  </Step>
+  
+  <Step title="Calculate order quantities">
+    Determine how much to order: `OrderQuantity = StockMinimo - Stock + SafetyBuffer`
+  </Step>
+  
+  <Step title="Create purchase orders">
+    Generate purchase orders in the `compras` module for each supplier.
+  </Step>
+  
+  <Step title="Receive inventory">
+    When products arrive, stock levels increase automatically through the purchase receipt process.
+  </Step>
+</Steps>
+
+### Inventory reconciliation
+
+Periodically verify physical inventory matches system records:
+
+<Warning>
+  Physical inventory counts should be performed regularly to identify discrepancies caused by damage, theft, or data entry errors.
+</Warning>
+
+<Steps>
+  <Step title="Export current stock levels">
+    Generate a report of all products with current `Stock` quantities.
+  </Step>
+  
+  <Step title="Perform physical count">
+    Count actual inventory on hand for each product.
+  </Step>
+  
+  <Step title="Identify variances">
+    Compare physical counts to system records and investigate significant differences.
+  </Step>
+  
+  <Step title="Adjust records">
+    Update product stock quantities to match verified physical counts.
+  </Step>
+  
+  <Step title="Document adjustments">
+    Record reasons for adjustments (damage, loss, counting errors, etc.).
+  </Step>
+</Steps>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Reorder point optimization">
+    - Review and adjust `StockMinimo` quarterly
+    - Account for seasonal demand variations
+    - Consider supplier reliability when setting safety stock
+    - Use higher safety stock for critical, fast-moving products
+    - Monitor stockout incidents to refine reorder points
+  </Accordion>
+  
+  <Accordion title="Inventory accuracy">
+    - Perform cycle counts regularly rather than annual full counts
+    - Investigate and resolve discrepancies immediately
+    - Train staff on proper receiving procedures
+    - Verify sale transactions are not voided incorrectly
+    - Maintain secure storage to prevent unauthorized inventory movements
+  </Accordion>
+  
+  <Accordion title="Stock level management">
+    - Avoid overstocking slow-moving items to reduce carrying costs
+    - Maintain higher stock of fast-moving products
+    - Use ABC analysis to prioritize inventory management efforts
+    - Monitor aged inventory and mark down or liquidate old stock
+    - Balance stock levels with storage capacity constraints
+  </Accordion>
+  
+  <Accordion title="Reporting and analysis">
+    - Generate weekly low stock reports for proactive reordering
+    - Track inventory turnover ratio by product and category
+    - Monitor stock-to-sales ratios to optimize inventory investment
+    - Analyze stockout incidents to improve service levels
+    - Review inventory value trends monthly
+  </Accordion>
+  
+  <Accordion title="System integration">
+    - Ensure sales staff understand that stock updates automatically
+    - Train receiving staff on purchase order receipt procedures
+    - Verify triggers are functioning correctly after database maintenance
+    - Monitor for negative stock levels indicating data errors
+    - Document any manual stock adjustments with clear justifications
+  </Accordion>
+</AccordionGroup>
+
+## Key performance indicators
+
+Monitor these metrics to optimize inventory management:
+
+<CardGroup cols={2}>
+  <Card title="Stock coverage" icon="calendar-days">
+    Days of supply available: `Stock ÷ Average Daily Sales`
+  </Card>
+  
+  <Card title="Inventory turnover" icon="rotate">
+    How many times inventory is sold and replaced: `Annual Sales ÷ Average Inventory Value`
+  </Card>
+  
+  <Card title="Fill rate" icon="percent">
+    Percentage of orders fulfilled from stock: `Orders Filled ÷ Total Orders`
+  </Card>
+  
+  <Card title="Carrying cost" icon="dollar-sign">
+    Cost to hold inventory: `Average Inventory Value × Annual Carrying Cost %`
+  </Card>
+</CardGroup>
+
+## Advanced inventory queries
+
+### Products by stock status
+
+```sql
+SELECT 
+    codprod,
+    descripcion,
+    stock,
+    stockMinimo,
+    CASE 
+        WHEN stock = 0 THEN 'Out of Stock'
+        WHEN stock < stockMinimo THEN 'Low Stock'
+        WHEN stock >= stockMinimo * 2 THEN 'Overstock'
+        ELSE 'Normal'
+    END AS stockStatus
+FROM productos
+WHERE estado = 1
+ORDER BY stock ASC
+```
+
+### Inventory value by category
+
+```sql
+SELECT 
+    c.nombre AS category,
+    COUNT(p.codprod) AS productCount,
+    SUM(p.stock) AS totalUnits,
+    SUM(p.stock * p.precioCompra) AS costValue,
+    SUM(p.stock * p.precioVenta) AS retailValue
+FROM productos p
+INNER JOIN categoria c ON p.codCategoria = c.codCategoria
+WHERE p.estado = 1
+GROUP BY c.nombre
+ORDER BY costValue DESC
+```

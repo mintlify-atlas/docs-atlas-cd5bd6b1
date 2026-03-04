@@ -1,0 +1,425 @@
+---
+title: Database Indexes
+description: SQL Server index strategy for optimizing query performance in TechCore Mini ERP
+---
+
+# Database Indexes
+
+TechCore Mini ERP implements a comprehensive indexing strategy to optimize query performance across all major tables. These indexes significantly improve search, filtering, and join operations throughout the application.
+
+## Overview
+
+The database includes 28 indexes across 11 tables, covering:
+- Foreign key relationships for efficient joins
+- Frequently searched columns (names, emails, dates)
+- Status and state filters
+- Filtered indexes for common query patterns
+
+<Info>
+**Performance Impact**: Properly designed indexes can improve query performance by 10-1000x, especially for large datasets. The indexes below are strategically placed on columns used in WHERE clauses, JOIN conditions, and ORDER BY statements.
+</Info>
+
+## Role Table Indexes
+
+### IDX_rol_habilitado
+
+```sql
+CREATE INDEX IDX_rol_habilitado ON rol(habilitado)
+```
+
+**Purpose**: Quickly filter active vs inactive roles
+
+**Used in queries**:
+- Loading role dropdowns (only active roles)
+- User permission checks
+- Role management screens
+
+## User Table Indexes
+
+### IDX_users_code (Unique)
+
+```sql
+CREATE UNIQUE INDEX IDX_users_code ON users(code)
+```
+
+**Purpose**: Enforce uniqueness and enable fast lookups by user code
+
+### IDX_users_idrol
+
+```sql
+CREATE INDEX IDX_users_idrol ON users(idrol)
+```
+
+**Purpose**: Optimize joins with the `rol` table for permission queries
+
+### IDX_users_email
+
+```sql
+CREATE INDEX IDX_users_email ON users(email)
+```
+
+**Purpose**: Fast email lookups for authentication and user searches
+
+<Note>
+The `username` column already has a unique constraint via table definition, which automatically creates an index.
+</Note>
+
+## Category Table Indexes
+
+### IDX_categoria_codigo (Unique)
+
+```sql
+CREATE UNIQUE INDEX IDX_categoria_codigo ON categoria(codigo)
+```
+
+**Purpose**: Enforce unique category codes and enable fast lookups
+
+### IDX_categoria_nombre
+
+```sql
+CREATE INDEX IDX_categoria_nombre ON categoria(nombre)
+```
+
+**Purpose**: Support category name searches and alphabetical sorting
+
+### IDX_categoria_estado
+
+```sql
+CREATE INDEX IDX_categoria_estado ON categoria(estado)
+```
+
+**Purpose**: Filter active/inactive categories efficiently
+
+## Client Table Indexes
+
+### IDX_clientes_nombre
+
+```sql
+CREATE INDEX IDX_clientes_nombre ON clientes(nombre)
+```
+
+**Purpose**: Fast client name searches and autocomplete functionality
+
+**Common usage**: Client dropdowns in sales forms
+
+### IDX_clientes_estado
+
+```sql
+CREATE INDEX IDX_clientes_estado ON clientes(estado)
+```
+
+**Purpose**: Filter active clients in selection lists
+
+### IDX_clientes_email
+
+```sql
+CREATE INDEX IDX_clientes_email ON clientes(email)
+```
+
+**Purpose**: Email validation and customer communication queries
+
+## Supplier Table Indexes
+
+### IDX_proveedores_nombre
+
+```sql
+CREATE INDEX IDX_proveedores_nombre ON proveedores(nombre)
+```
+
+**Purpose**: Supplier searches in purchase order forms
+
+### IDX_proveedores_estado
+
+```sql
+CREATE INDEX IDX_proveedores_estado ON proveedores(estado)
+```
+
+**Purpose**: Filter active suppliers for purchasing
+
+## Product Table Indexes
+
+### IDX_productos_descripcion
+
+```sql
+CREATE INDEX IDX_productos_descripcion ON productos(descripcion)
+```
+
+**Purpose**: Product searches and autocomplete in sales/purchase forms
+
+### IDX_productos_idcategoria
+
+```sql
+CREATE INDEX IDX_productos_idcategoria ON productos(codCategoria)
+```
+
+**Purpose**: Filter products by category, join with category table
+
+### IDX_productos_estado
+
+```sql
+CREATE INDEX IDX_productos_estado ON productos(estado)
+```
+
+**Purpose**: Show only active products in selections
+
+### IDX_productos_stock (Composite)
+
+```sql
+CREATE INDEX IDX_productos_stock ON productos(stock, stockMinimo)
+```
+
+**Purpose**: Identify low stock items for reorder alerts
+
+**Query optimization**:
+```sql
+-- This query uses the composite index efficiently
+SELECT * FROM productos 
+WHERE stock <= stockMinimo
+ORDER BY stock
+```
+
+<Info>
+**Composite Index**: The `stock, stockMinimo` index is particularly useful for inventory alerts. It allows efficient queries that compare stock levels against minimum thresholds without scanning the entire table.
+</Info>
+
+## Sales Table Indexes
+
+### IDX_ventas_codclien
+
+```sql
+CREATE INDEX IDX_ventas_codclien ON ventas(codclien)
+```
+
+**Purpose**: Customer purchase history and sales reports by client
+
+### IDX_ventas_codvend
+
+```sql
+CREATE INDEX IDX_ventas_codvend ON ventas(codvend)
+```
+
+**Purpose**: Salesperson performance reports and commission calculations
+
+### IDX_ventas_fecha
+
+```sql
+CREATE INDEX IDX_ventas_fecha ON ventas(fecha)
+```
+
+**Purpose**: Date range queries for sales reports and analytics
+
+**Common usage**: Daily, monthly, and yearly sales reports
+
+### IDX_ventas_tipoPago
+
+```sql
+CREATE INDEX IDX_ventas_tipoPago ON ventas(tipoPago)
+```
+
+**Purpose**: Filter credit vs cash sales for financial reporting
+
+### IDX_ventas_nula (Filtered Index)
+
+```sql
+CREATE INDEX IDX_ventas_nula ON ventas(nula) WHERE nula = 0
+```
+
+**Purpose**: Optimize queries that exclude voided transactions
+
+**Used by**: All three database views (`vw_CuotasVencidas`, `vw_CuotasPorVencer`, `vw_EstadoCuenta`)
+
+<Note>
+**Filtered Index**: This index only includes rows where `nula = 0` (valid sales). It's smaller and faster than a full index, perfect for views that always filter out voided transactions.
+</Note>
+
+## Sales Detail Table Indexes
+
+### IDX_ventasDetalle_norden
+
+```sql
+CREATE INDEX IDX_ventasDetalle_norden ON ventasDetalle(norden)
+```
+
+**Purpose**: Retrieve all line items for a specific sale
+
+### IDX_ventasDetalle_codprod
+
+```sql
+CREATE INDEX IDX_ventasDetalle_codprod ON ventasDetalle(codprod)
+```
+
+**Purpose**: Product sales history and analytics
+
+## Purchase Table Indexes
+
+### IDX_compras_codprov
+
+```sql
+CREATE INDEX IDX_compras_codprov ON compras(codprov)
+```
+
+**Purpose**: Purchase history by supplier
+
+### IDX_compras_codusu
+
+```sql
+CREATE INDEX IDX_compras_codusu ON compras(codusu)
+```
+
+**Purpose**: Track purchases by user for audit trails
+
+### IDX_compras_fecha
+
+```sql
+CREATE INDEX IDX_compras_fecha ON compras(fecha)
+```
+
+**Purpose**: Date-based purchase reports and cost analysis
+
+### IDX_compras_estado
+
+```sql
+CREATE INDEX IDX_compras_estado ON compras(estado)
+```
+
+**Purpose**: Filter active/completed purchase orders
+
+## Purchase Detail Table Indexes
+
+### IDX_comprasDetalle_norden
+
+```sql
+CREATE INDEX IDX_comprasDetalle_norden ON comprasDetalle(norden)
+```
+
+**Purpose**: Retrieve purchase order line items
+
+### IDX_comprasDetalle_codprod
+
+```sql
+CREATE INDEX IDX_comprasDetalle_codprod ON comprasDetalle(codprod)
+```
+
+**Purpose**: Product purchase history for cost analysis
+
+## Payment Plan Table Indexes
+
+### IDX_planPagos_norden
+
+```sql
+CREATE INDEX IDX_planPagos_norden ON planPagos(norden)
+```
+
+**Purpose**: Retrieve all installments for a specific sale
+
+### IDX_planPagos_fechaVencimiento
+
+```sql
+CREATE INDEX IDX_planPagos_fechaVencimiento ON planPagos(fechaVencimiento)
+```
+
+**Purpose**: Find installments due within specific date ranges
+
+**Used by**: `vw_CuotasVencidas` and `vw_CuotasPorVencer` views
+
+### IDX_planPagos_pagada (Filtered Index)
+
+```sql
+CREATE INDEX IDX_planPagos_pagada ON planPagos(pagada) WHERE pagada = 0
+```
+
+**Purpose**: Quickly find unpaid installments
+
+**Used by**: Both installment views for overdue and upcoming payments
+
+<Info>
+**Filtered Index Benefits**: By only indexing unpaid installments (`pagada = 0`), this index:
+- Reduces index size by ~50% over time as payments are made
+- Speeds up queries that only care about pending payments
+- Requires less maintenance and storage
+</Info>
+
+## Payment Table Indexes
+
+### IDX_abonosVentas_norden
+
+```sql
+CREATE INDEX IDX_abonosVentas_norden ON abonosVentas(norden)
+```
+
+**Purpose**: Retrieve all payments for a specific sale
+
+**Used by**: `vw_EstadoCuenta` view to calculate total payments
+
+### IDX_abonosVentas_fecha
+
+```sql
+CREATE INDEX IDX_abonosVentas_fecha ON abonosVentas(fecha)
+```
+
+**Purpose**: Cash flow reports and daily payment collections
+
+## Index Maintenance
+
+### Monitoring Index Health
+
+```sql
+-- Check index fragmentation
+SELECT 
+    OBJECT_NAME(i.object_id) AS TableName,
+    i.name AS IndexName,
+    ips.avg_fragmentation_in_percent,
+    ips.page_count
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'DETAILED') ips
+INNER JOIN sys.indexes i ON ips.object_id = i.object_id AND ips.index_id = i.index_id
+WHERE ips.avg_fragmentation_in_percent > 10
+ORDER BY ips.avg_fragmentation_in_percent DESC
+```
+
+### Rebuilding Indexes
+
+```sql
+-- Rebuild fragmented indexes
+ALTER INDEX IDX_ventas_fecha ON ventas REBUILD
+
+-- Rebuild all indexes on a table
+ALTER INDEX ALL ON ventas REBUILD
+```
+
+<Warning>
+**Performance Consideration**: Index rebuilds can be resource-intensive. Schedule them during low-traffic periods (nights/weekends). For production systems, consider using `REORGANIZE` instead of `REBUILD` for indexes with 10-30% fragmentation.
+</Warning>
+
+## Index Usage Statistics
+
+```sql
+-- View which indexes are being used
+SELECT 
+    OBJECT_NAME(s.object_id) AS TableName,
+    i.name AS IndexName,
+    s.user_seeks,
+    s.user_scans,
+    s.user_lookups,
+    s.user_updates,
+    s.last_user_seek,
+    s.last_user_scan
+FROM sys.dm_db_index_usage_stats s
+INNER JOIN sys.indexes i ON s.object_id = i.object_id AND s.index_id = i.index_id
+WHERE database_id = DB_ID('TechCore')
+ORDER BY s.user_seeks + s.user_scans + s.user_lookups DESC
+```
+
+## Performance Tips
+
+1. **Use indexes in WHERE clauses**: Queries benefit most when filtering on indexed columns
+2. **Join on indexed columns**: All foreign keys have indexes for optimal join performance
+3. **Avoid functions on indexed columns**: `WHERE YEAR(fecha) = 2024` won't use the index; use `WHERE fecha >= '2024-01-01'` instead
+4. **Leverage filtered indexes**: The `nula = 0` and `pagada = 0` filtered indexes are optimized for their specific use cases
+5. **Monitor query plans**: Use SQL Server's execution plan analyzer to verify index usage
+
+## Related Topics
+
+- [Views](/database/views) - How views leverage these indexes
+- [Triggers](/database/triggers) - Trigger performance and index usage
+- [Database Entities](/database/entities) - Complete table structure with indexes
+- [Database Overview](/database/overview) - Entity relationships and architecture

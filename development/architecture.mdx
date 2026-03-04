@@ -1,0 +1,188 @@
+---
+title: Application Architecture
+description: Overview of TechCore Mini ERP's ASP.NET Core MVC architecture, project structure, and technology stack
+---
+
+## Overview
+
+TechCore Mini ERP is built on **ASP.NET Core MVC** using the latest .NET 10.0 framework. The application follows a traditional MVC pattern with Entity Framework Core for data access and includes modern front-end tooling with Tailwind CSS.
+
+## Technology Stack
+
+### Backend
+- **.NET 10.0** - Target framework
+- **ASP.NET Core MVC** - Web application framework
+- **Entity Framework Core 10.0.3** - Object-relational mapper (ORM)
+- **SQL Server** - Database provider
+
+### Frontend
+- **Tailwind CSS** - Utility-first CSS framework (build pipeline integrated)
+- **Bootstrap 5** - Component library
+- **jQuery** - JavaScript library with validation
+
+## Project Structure
+
+The application follows a well-organized folder structure:
+
+```
+TechCore/
+├── Controllers/          # MVC Controllers
+├── Models/              # Entity models (EF Core)
+├── Views/               # Razor views
+├── Datos/               # Data access layer (DbContext)
+├── Interfaces/          # Service interfaces
+├── Concretes/           # Service implementations
+├── ViewModels/
+│   ├── Request/         # Request DTOs
+│   └── Response/        # Response DTOs
+├── wwwroot/
+│   ├── css/             # Stylesheets (Tailwind output)
+│   ├── js/              # JavaScript files
+│   └── lib/             # Client libraries
+└── Program.cs           # Application entry point
+```
+
+## Application Startup
+
+The application is configured in `~/workspace/source/TechCore/Program.cs` using the minimal hosting model:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container
+builder.Services.AddControllersWithViews();
+
+// Configure Entity Framework Core with SQL Server
+builder.Services.AddDbContext<TechCoreContext>(options => { 
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    options.UseSqlServer(connectionString);
+});
+
+var app = builder.Build();
+```
+
+### Service Registration
+
+Services are registered in the dependency injection container:
+
+- **MVC Controllers with Views** - `AddControllersWithViews()`
+- **TechCoreContext** - Entity Framework DbContext with SQL Server provider
+
+### Middleware Pipeline
+
+The HTTP request pipeline is configured with the following middleware (TechCore/Program.cs:22-40):
+
+```csharp
+// Development vs Production
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseRouting();
+app.UseAuthorization();
+app.MapStaticAssets();
+
+// Default MVC routing pattern
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}")
+    .WithStaticAssets();
+```
+
+**Middleware order:**
+1. Exception handling (production only)
+2. HSTS (production only)
+3. HTTPS redirection
+4. Routing
+5. Authorization
+6. Static assets
+7. Controller routing
+
+## Tailwind CSS Integration
+
+Tailwind CSS is integrated into the build process via a custom MSBuild target in `TechCore.csproj`:
+
+```xml
+<ItemGroup>
+    <UpToDateCheckBuilt Include="wwwroot/css/site.css" Set="Css" />
+    <UpToDateCheckBuilt Include="tailwind.config.js" Set="Css" />
+</ItemGroup>
+
+<Target Name="Tailwind" BeforeTargets="Build">
+    <Exec Command="npm run css:build" />
+</Target>
+```
+
+This configuration:
+- Runs the `npm run css:build` command before every build
+- Tracks changes to `site.css` and `tailwind.config.js`
+- Ensures Tailwind styles are compiled before the application starts
+
+## Routing Convention
+
+The application uses the standard ASP.NET Core MVC routing pattern:
+
+```
+{controller=Home}/{action=Index}/{id?}
+```
+
+**Default route:** `/` → `HomeController.Index()`
+
+**Example routes:**
+- `/Productos` → `ProductosController.Index()`
+- `/Ventas/Create` → `VentasController.Create()`
+- `/Clientes/Edit/5` → `ClientesController.Edit(id: "5")`
+
+## Database Configuration
+
+The application uses a connection string named `DefaultConnection` from `appsettings.json`:
+
+```csharp
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+options.UseSqlServer(connectionString);
+```
+
+See [Data Access Layer](/development/data-access) for detailed database configuration.
+
+## NuGet Packages
+
+Core Entity Framework Core packages (TechCore.csproj:10-20):
+
+```xml
+<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.3" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.Abstractions" Version="10.0.3" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.3" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.3" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.3" />
+```
+
+## Development Features
+
+### Nullable Reference Types
+
+The project has nullable reference types enabled:
+
+```xml
+<Nullable>enable</Nullable>
+```
+
+This provides compile-time null-safety checking.
+
+### Implicit Usings
+
+Common namespaces are automatically imported:
+
+```xml
+<ImplicitUsings>enable</ImplicitUsings>
+```
+
+No need to manually import `System`, `System.Collections.Generic`, etc.
+
+## Next Steps
+
+- Learn about the [Data Access Layer](/development/data-access)
+- Explore the [Entity Models](/development/models)
+- Review the database schema and relationships

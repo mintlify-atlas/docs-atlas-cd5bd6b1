@@ -1,0 +1,170 @@
+---
+title: Development Setup
+description: Get your development environment ready for TechCore Mini ERP
+---
+
+This guide will help you set up your local development environment for TechCore Mini ERP.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed on your system:
+
+<Steps>
+  <Step title=".NET 10.0 SDK">
+    Download and install the .NET 10.0 SDK from the [official .NET download page](https://dotnet.microsoft.com/download).
+    
+    Verify installation:
+    ```bash
+    dotnet --version
+    ```
+    
+    Should output version 10.0.x or higher.
+  </Step>
+
+  <Step title="SQL Server">
+    Install one of the following:
+    - SQL Server 2019 or later (Express Edition is sufficient for development)
+    - SQL Server LocalDB (included with Visual Studio)
+    
+    TechCore uses Entity Framework Core 10.0.3 with SQL Server provider.
+  </Step>
+
+  <Step title="Node.js and npm">
+    Install Node.js (version 18 or later) which includes npm.
+    
+    Verify installation:
+    ```bash
+    node --version
+    npm --version
+    ```
+    
+    Required for building Tailwind CSS assets.
+  </Step>
+
+  <Step title="Git">
+    Install Git for version control.
+    
+    Verify installation:
+    ```bash
+    git --version
+    ```
+  </Step>
+
+  <Step title="IDE (Optional but Recommended)">
+    Choose one:
+    - Visual Studio 2022 (Community Edition or higher)
+    - Visual Studio Code with C# Dev Kit extension
+    - JetBrains Rider
+  </Step>
+</Steps>
+
+## Git Configuration
+
+Configure your Git identity for commits:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+```
+
+Verify your configuration:
+```bash
+git config --list
+```
+
+## Cloning the Repository
+
+<CodeGroup>
+```bash HTTPS
+git clone https://github.com/your-org/TechCore.git
+cd TechCore
+```
+
+```bash SSH
+git clone git@github.com:your-org/TechCore.git
+cd TechCore
+```
+</CodeGroup>
+
+### Setting up SSH (Recommended)
+
+For secure authentication without passwords:
+
+<Steps>
+  <Step title="Generate SSH key">
+    ```bash
+    ssh-keygen -t rsa -b 4096 -C "your@email.com"
+    ```
+    
+    Press Enter to accept the default file location.
+  </Step>
+
+  <Step title="Start SSH agent">
+    ```bash
+    eval $(ssh-agent -s)
+    ```
+  </Step>
+
+  <Step title="Add SSH key">
+    ```bash
+    ssh-add ~/.ssh/id_rsa
+    ```
+  </Step>
+
+  <Step title="Copy public key to GitHub">
+    ```bash
+    cat ~/.ssh/id_rsa.pub
+    ```
+    
+    Copy the output and add it to your GitHub account under Settings > SSH and GPG keys.
+  </Step>
+
+  <Step title="Test connection">
+    ```bash
+    ssh -T git@github.com
+    ```
+    
+    Should display: "Hi username! You've successfully authenticated..."
+  </Step>
+</Steps>
+
+## Installing Dependencies
+
+<Steps>
+  <Step title="Restore .NET packages">
+    Navigate to the TechCore project directory:
+    ```bash
+    cd TechCore
+    ```
+    
+    Restore NuGet packages:
+    ```bash
+    dotnet restore
+    ```
+    
+    This will install:
+    - Microsoft.EntityFrameworkCore 10.0.3
+    - Microsoft.EntityFrameworkCore.SqlServer 10.0.3
+    - Microsoft.EntityFrameworkCore.Tools 10.0.3
+    - Microsoft.EntityFrameworkCore.Design 10.0.3
+  </Step>
+
+  <Step title="Install npm packages">
+    Install Node.js dependencies for Tailwind CSS:
+    ```bash
+    npm install
+    ```
+    
+    This will install:
+    - tailwindcss 4.2.1
+    - @tailwindcss/cli 4.2.1
+    - daisyui 5.5.19 (dev dependency)
+  </Step>
+</Steps>
+
+## Next Steps
+
+Your development environment is now set up! Continue with:
+
+- [Configuration](/development/configuration) - Set up your database connection and app settings
+- [Running Locally](/development/running-locally) - Build and run the application

@@ -1,0 +1,274 @@
+---
+title: Coding Standards
+description: C# coding conventions and best practices for TechCore Mini ERP development
+---
+
+This document outlines the coding standards and conventions used in the TechCore Mini ERP codebase to ensure consistency and maintainability.
+
+## Naming Conventions
+
+### C# Classes and Properties
+
+Follow standard C# naming conventions:
+
+- **Classes**: Use PascalCase for class names
+  ```csharp
+  public partial class Cliente { }
+  public partial class Producto { }
+  public partial class VentasDetalle { }
+  ```
+
+- **Properties**: Use PascalCase for property names
+  ```csharp
+  public string Codclien { get; set; } = null!;
+  public string Nombre { get; set; } = null!;
+  public decimal PrecioCompra { get; set; }
+  public decimal PrecioVenta { get; set; }
+  ```
+
+- **Navigation Properties**: Use descriptive names with "Navigation" suffix
+  ```csharp
+  public virtual Cliente CodclienNavigation { get; set; } = null!;
+  public virtual Categorium? CodCategoriaNavigation { get; set; }
+  public virtual User CodusuNavigation { get; set; } = null!;
+  ```
+
+### Database Column Mapping
+
+Database column names use **lowercase with camelCase** for compound words:
+
+```csharp
+// Property in C# (PascalCase)
+public string Codclien { get; set; } = null!
+
+// Maps to database column (lowercase)
+entity.Property(e => e.Codclien)
+    .HasMaxLength(50)
+    .IsUnicode(false)
+    .HasColumnName("codclien");
+```
+
+**Examples from the codebase:**
+
+```csharp
+// Single word columns - all lowercase
+.HasColumnName("nombre")
+.HasColumnName("email")
+.HasColumnName("estado")
+
+// Compound word columns - camelCase
+.HasColumnName("codclien")
+.HasColumnName("precioCompra")
+.HasColumnName("precioVenta")
+.HasColumnName("stockMinimo")
+.HasColumnName("created_date")  // snake_case for system fields
+```
+
+## Model Classes
+
+### Partial Classes
+
+All model classes are declared as `partial` to allow for extensions:
+
+```csharp
+namespace TechCore.Models;
+
+public partial class Cliente
+{
+    // Properties
+}
+```
+
+### Null-Forgiving Operator
+
+Use the null-forgiving operator (`= null!`) for required properties that Entity Framework will initialize:
+
+```csharp
+public string Codclien { get; set; } = null!;
+public string Nombre { get; set; } = null!;
+public virtual Cliente CodclienNavigation { get; set; } = null!
+```
+
+### Nullable Properties
+
+Use nullable types (`?`) for optional properties:
+
+```csharp
+public string? Telefono { get; set; }
+public string? Email { get; set; }
+public int? Stock { get; set; }
+public DateTime? CreatedDate { get; set; }
+public virtual Categorium? CodCategoriaNavigation { get; set; }
+```
+
+### Collection Initialization
+
+Initialize navigation collections to empty lists:
+
+```csharp
+public virtual ICollection<Venta> Venta { get; set; } = new List<Venta>();
+public virtual ICollection<ComprasDetalle> ComprasDetalles { get; set; } = new List<ComprasDetalle>();
+public virtual ICollection<VentasDetalle> VentasDetalles { get; set; } = new List<VentasDetalle>();
+```
+
+## Entity Framework Configuration
+
+### DbContext Configuration
+
+Configure Entity Framework in `TechCoreContext.cs` using the Fluent API in `OnModelCreating`:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.Entity<Cliente>(entity =>
+    {
+        entity.HasKey(e => e.Codclien).HasName("PK__clientes__62CB7D2CF525EE4E");
+        entity.ToTable("clientes");
+        
+        // Configure properties
+        entity.Property(e => e.Codclien)
+            .HasMaxLength(50)
+            .IsUnicode(false)
+            .HasColumnName("codclien");
+            
+        entity.Property(e => e.Estado)
+            .HasDefaultValue(true)
+            .HasColumnName("estado");
+    });
+}
+```
+
+### Indexes
+
+Define indexes for frequently queried columns:
+
+```csharp
+entity.HasIndex(e => e.Email, "IDX_clientes_email");
+entity.HasIndex(e => e.Estado, "IDX_clientes_estado");
+entity.HasIndex(e => e.Nombre, "IDX_clientes_nombre");
+```
+
+### Foreign Key Relationships
+
+Configure relationships with proper delete behavior:
+
+```csharp
+entity.HasOne(d => d.CodclienNavigation).WithMany(p => p.Venta)
+    .HasForeignKey(d => d.Codclien)
+    .OnDelete(DeleteBehavior.ClientSetNull)
+    .HasConstraintName("FK__ventas__codclien__693CA210");
+```
+
+### Default Values
+
+Set database default values in configuration:
+
+```csharp
+entity.Property(e => e.CreatedDate)
+    .HasDefaultValueSql("(getdate())")
+    .HasColumnType("datetime")
+    .HasColumnName("created_date");
+
+entity.Property(e => e.Estado)
+    .HasDefaultValue(true)
+    .HasColumnName("estado");
+```
+
+## Data Types
+
+### Decimal Precision
+
+Use consistent decimal precision for monetary values:
+
+```csharp
+entity.Property(e => e.PrecioCompra)
+    .HasColumnType("decimal(18, 2)")
+    .HasColumnName("precioCompra");
+
+entity.Property(e => e.Total)
+    .HasColumnType("decimal(18, 2)")
+    .HasColumnName("total");
+```
+
+### String Lengths
+
+Define appropriate maximum lengths for string properties:
+
+```csharp
+// Short codes
+.HasMaxLength(10)  // User codes
+.HasMaxLength(20)  // Category codes
+.HasMaxLength(50)  // Product codes, order numbers
+
+// Standard fields
+.HasMaxLength(15)   // Phone numbers
+.HasMaxLength(100)  // Usernames
+.HasMaxLength(150)  // Short names
+.HasMaxLength(200)  // Names, emails
+.HasMaxLength(300)  // Addresses, descriptions
+.HasMaxLength(500)  // Long descriptions
+```
+
+## Controllers
+
+### Controller Structure
+
+Follow ASP.NET Core MVC conventions:
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using TechCore.Models;
+
+namespace TechCore.Controllers
+{
+    public class HomeController : Controller
+    {
+        public IActionResult Index()
+        {
+            return View();
+        }
+        
+        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+        public IActionResult Error()
+        {
+            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+        }
+    }
+}
+```
+
+## Dependency Injection
+
+Register services in `Program.cs`:
+
+```csharp
+// Add DbContext with SQL Server
+builder.Services.AddDbContext<TechCoreContext>(options => { 
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    options.UseSqlServer(connectionString);
+});
+```
+
+## File Organization
+
+```
+TechCore/
+├── Controllers/        # MVC Controllers
+├── Datos/             # Data access (DbContext)
+├── Models/            # Entity models
+├── Views/             # Razor views
+└── Program.cs         # Application entry point
+```
+
+## Best Practices
+
+1. **Use partial classes** for all models to allow extensions
+2. **Always specify column names** explicitly in Entity Framework configuration
+3. **Use PascalCase** for all C# identifiers (classes, properties, methods)
+4. **Use lowercase/camelCase** for database column names
+5. **Initialize collections** to empty lists to avoid null reference exceptions
+6. **Use nullable types** appropriately to reflect database schema
+7. **Define indexes** on foreign keys and frequently queried columns
+8. **Set default values** in Entity Framework configuration to match database defaults
+9. **Use `virtual`** keyword for navigation properties to enable lazy loading
+10. **Keep controllers thin** - business logic should be in separate service classes

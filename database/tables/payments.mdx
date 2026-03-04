@@ -1,0 +1,356 @@
+---
+title: "Payment Tables"
+description: "Database schema documentation for planPagos (payment plan) and abonosVentas (payment installments) tables"
+---
+
+## Overview
+
+The payment tables manage credit sales and installment payments in TechCore Mini ERP. The `planPagos` table defines the payment schedule for credit sales, while the `abonosVentas` table records actual payments made against those installments.
+
+## PlanPagos Table
+
+The `planPagos` table stores the payment schedule for credit sales, breaking down the total amount into individual installments.
+
+### SQL Schema
+
+```sql
+CREATE TABLE planPagos(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    numeroCuota INT NOT NULL,
+    fechaVencimiento DATE NOT NULL,
+    montoCuota DECIMAL(18,2) NOT NULL,
+    pagada BIT DEFAULT 0,
+    FOREIGN KEY (norden) REFERENCES ventas(norden) ON DELETE CASCADE
+)
+GO
+
+CREATE INDEX IDX_planPagos_norden ON planPagos(norden)
+GO
+CREATE INDEX IDX_planPagos_fechaVencimiento ON planPagos(fechaVencimiento)
+GO
+-- Filtered index for pending installments
+CREATE INDEX IDX_planPagos_pagada ON planPagos(pagada) WHERE pagada = 0
+GO
+```
+
+### Columns
+
+<ParamField path="id" type="INT">
+  Primary key with auto-increment. Uniquely identifies each installment in the payment plan.
+</ParamField>
+
+<ParamField path="norden" type="VARCHAR(50)">
+  Foreign key to `ventas` table. Links the installment to its parent sale. Required field. CASCADE DELETE ensures payment plans are removed when the sale is deleted.
+</ParamField>
+
+<ParamField path="numeroCuota" type="INT">
+  Installment/payment number (1, 2, 3, etc.). Identifies the sequence of the payment within the payment plan. Required field.
+</ParamField>
+
+<ParamField path="fechaVencimiento" type="DATE">
+  Due date for this installment. Required field. Used for calculating overdue payments and late fees.
+</ParamField>
+
+<ParamField path="montoCuota" type="DECIMAL(18,2)">
+  Installment amount. Required field. This is the payment amount due on the fechaVencimiento.
+</ParamField>
+
+<ParamField path="pagada" type="BIT">
+  Payment status flag. Defaults to 0 (unpaid). Set to 1 when payment is received. Automatically updated by TR_ActualizarSaldo trigger.
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `id`
+- **Foreign Key**: `norden` references `ventas(norden)` ON DELETE CASCADE
+
+### Indexes
+
+- **IDX_planPagos_norden**: Queries for all installments of a specific sale
+- **IDX_planPagos_fechaVencimiento**: Date-based queries for upcoming or overdue payments
+- **IDX_planPagos_pagada**: Filtered index for unpaid installments (optimized WHERE pagada = 0)
+
+### C# Model
+
+```csharp
+public partial class PlanPago
+{
+    public int Id { get; set; }
+
+    public string Norden { get; set; } = null!;
+
+    public int NumeroCuota { get; set; }
+
+    public DateOnly FechaVencimiento { get; set; }
+
+    public decimal MontoCuota { get; set; }
+
+    public bool? Pagada { get; set; }
+
+    public virtual Venta NordenNavigation { get; set; } = null!;
+}
+```
+
+### Relationships
+
+- **Many-to-One with ventas**: Multiple installments belong to one sale (CASCADE DELETE)
+
+---
+
+## AbonosVentas Table
+
+The `abonosVentas` table records actual payments received from customers for credit sales.
+
+### SQL Schema
+
+```sql
+CREATE TABLE abonosVentas(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    fecha DATETIME DEFAULT GETDATE(),
+    monto DECIMAL(18,2) NOT NULL,
+    numeroCuota INT NOT NULL,
+    FOREIGN KEY (norden) REFERENCES ventas(norden) ON DELETE CASCADE
+)
+GO
+
+CREATE INDEX IDX_abonosVentas_norden ON abonosVentas(norden)
+GO
+CREATE INDEX IDX_abonosVentas_fecha ON abonosVentas(fecha)
+GO
+```
+
+### Columns
+
+<ParamField path="id" type="INT">
+  Primary key with auto-increment. Uniquely identifies each payment transaction.
+</ParamField>
+
+<ParamField path="norden" type="VARCHAR(50)">
+  Foreign key to `ventas` table. Links the payment to its parent sale. Required field. CASCADE DELETE ensures payments are removed when the sale is deleted.
+</ParamField>
+
+<ParamField path="fecha" type="DATETIME">
+  Payment date/time. Defaults to current date/time (GETDATE()). Records when the payment was received.
+</ParamField>
+
+<ParamField path="monto" type="DECIMAL(18,2)">
+  Payment amount. Required field. The actual amount received from the customer.
+</ParamField>
+
+<ParamField path="numeroCuota" type="INT">
+  The installment number this payment applies to. Required field. Links to planPagos.numeroCuota.
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `id`
+- **Foreign Key**: `norden` references `ventas(norden)` ON DELETE CASCADE
+
+### Indexes
+
+- **IDX_abonosVentas_norden**: Payment history queries for specific sales
+- **IDX_abonosVentas_fecha**: Date-based payment reports and cash flow analysis
+
+### C# Model
+
+```csharp
+public partial class AbonosVenta
+{
+    public int Id { get; set; }
+
+    public string Norden { get; set; } = null!;
+
+    public DateTime? Fecha { get; set; }
+
+    public decimal Monto { get; set; }
+
+    public int NumeroCuota { get; set; }
+
+    public virtual Venta NordenNavigation { get; set; } = null!;
+}
+```
+
+### Relationships
+
+- **Many-to-One with ventas**: Multiple payments can be made for one sale (CASCADE DELETE)
+
+## Entity Relationships
+
+```
+ventas (1) ----< (*) planPagos
+  |
+  +----< (*) abonosVentas
+```
+
+## Automatic Payment Processing
+
+When a payment is received, the system automatically updates the sale balance and marks installments as paid:
+
+### TR_ActualizarSaldo Trigger
+
+```sql
+CREATE TRIGGER TR_ActualizarSaldo
+ON abonosVentas
+AFTER INSERT
+AS
+BEGIN
+    -- Update sale balance
+    UPDATE v
+    SET v.saldo = v.saldo - i.monto
+    FROM ventas v
+    INNER JOIN inserted i ON v.norden = i.norden
+
+    -- Mark installment as paid
+    UPDATE pp
+    SET pagada = 1
+    FROM planPagos pp
+    INNER JOIN inserted i 
+        ON pp.norden = i.norden 
+        AND pp.numeroCuota = i.numeroCuota
+END
+```
+
+**Trigger Actions**:
+1. Decreases `ventas.saldo` by the payment amount
+2. Sets `planPagos.pagada = 1` for the corresponding installment
+
+## Payment Tracking Views
+
+The system includes built-in views for payment management:
+
+### vw_CuotasVencidas
+
+Tracks overdue installments with calculated late fees:
+
+```sql
+CREATE VIEW vw_CuotasVencidas
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota,
+    DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS diasAtraso,
+    (pp.montoCuota * 0.02) * DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS moraCalculada
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento < GETDATE()
+AND v.nula = 0
+```
+
+**Features**:
+- Shows only unpaid installments past due date
+- Calculates days overdue
+- Applies 2% daily late fee (mora)
+- Excludes voided sales
+
+### vw_CuotasPorVencer
+
+Tracks upcoming installments:
+
+```sql
+CREATE VIEW vw_CuotasPorVencer
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento >= GETDATE()
+AND v.nula = 0
+```
+
+**Features**:
+- Shows unpaid installments not yet due
+- Useful for payment reminders
+- Excludes voided sales
+
+### vw_EstadoCuenta
+
+Provides account status for credit customers:
+
+```sql
+CREATE VIEW vw_EstadoCuenta
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    v.total,
+    v.saldo,
+    v.meses,
+    SUM(ISNULL(a.monto,0)) AS totalAbonado
+FROM ventas v
+INNER JOIN clientes c ON v.codclien = c.codclien
+LEFT JOIN abonosVentas a ON v.norden = a.norden
+WHERE v.tipoPago = 'CREDITO'
+AND v.nula = 0
+GROUP BY v.norden, c.nombre, v.total, v.saldo, v.meses
+```
+
+**Features**:
+- Shows credit sales only
+- Displays total, remaining balance, and total paid
+- Groups payments by sale
+- Excludes voided sales
+
+## Payment Workflow
+
+### Creating a Credit Sale
+
+1. Create `ventas` record with:
+   - `tipoPago = 'CREDITO'`
+   - `meses` = number of installments
+   - `tasaInteres` = interest rate
+   - `saldo` = total amount (initially)
+
+2. Generate `planPagos` records:
+   - One record per installment
+   - Calculate `fechaVencimiento` for each installment
+   - Calculate `montoCuota` including interest
+   - All installments start with `pagada = 0`
+
+### Recording a Payment
+
+1. Insert `abonosVentas` record:
+   - Set `norden` to the sale
+   - Set `numeroCuota` to the installment being paid
+   - Set `monto` to the payment amount
+   - `fecha` defaults to current time
+
+2. Trigger automatically:
+   - Updates `ventas.saldo`
+   - Sets `planPagos.pagada = 1`
+
+### Querying Payment Status
+
+```sql
+-- Check overdue payments
+SELECT * FROM vw_CuotasVencidas
+
+-- Check upcoming payments
+SELECT * FROM vw_CuotasPorVencer
+
+-- Check customer account status
+SELECT * FROM vw_EstadoCuenta WHERE cliente LIKE '%CustomerName%'
+```
+
+## Usage Notes
+
+- Payment plans are automatically deleted when the parent sale is deleted (CASCADE)
+- The `pagada` filtered index optimizes queries for pending payments
+- Late fees (mora) are calculated at 2% per day in vw_CuotasVencidas
+- All monetary amounts use DECIMAL(18,2) for precision
+- The trigger ensures data consistency between sales balance and payment records
+- Voided sales (nula = 1) are excluded from all payment tracking views
+- Multiple payments can be made against a single sale for different installments
+- The `numeroCuota` field links payments to specific installments in the payment plan

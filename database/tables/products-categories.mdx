@@ -1,0 +1,272 @@
+---
+title: "Products and Categories Tables"
+description: "Database schema documentation for productos (products) and categoria (categories) tables, including inventory management"
+---
+
+## Overview
+
+The products and categories tables form the core of inventory management in TechCore Mini ERP. The `categoria` table organizes products into logical groups, while the `productos` table stores detailed product information including pricing, stock levels, and category assignments.
+
+## Categoria Table
+
+The `categoria` table defines product categories for organizing and classifying inventory items.
+
+### SQL Schema
+
+```sql
+CREATE TABLE categoria(
+    codCategoria INT IDENTITY(1,1) PRIMARY KEY,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(150) NOT NULL,
+    descripcion VARCHAR(300),
+    estado BIT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE()
+)
+GO
+
+CREATE UNIQUE INDEX IDX_categoria_codigo ON categoria(codigo)
+GO
+CREATE INDEX IDX_categoria_nombre ON categoria(nombre)
+GO
+CREATE INDEX IDX_categoria_estado ON categoria(estado)
+GO
+```
+
+### Columns
+
+<ParamField path="codCategoria" type="INT">
+  Primary key with auto-increment. Uniquely identifies each category in the system.
+</ParamField>
+
+<ParamField path="codigo" type="VARCHAR(20)">
+  Business-defined category code. Must be unique (enforced by UNIQUE constraint and index). This provides a human-readable identifier for the category.
+</ParamField>
+
+<ParamField path="nombre" type="VARCHAR(150)">
+  Category name/title. Required field.
+</ParamField>
+
+<ParamField path="descripcion" type="VARCHAR(300)">
+  Detailed description of the category. Optional field for additional context.
+</ParamField>
+
+<ParamField path="estado" type="BIT">
+  Category status flag. Defaults to 1 (active). Set to 0 to deactivate category without deleting it or affecting existing products.
+</ParamField>
+
+<ParamField path="created_date" type="DATETIME">
+  Timestamp when the category was created. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `codCategoria`
+- **Unique Constraint**: `codigo` must be unique
+
+### Indexes
+
+- **IDX_categoria_codigo**: Unique index on `codigo` for fast lookups by category code
+- **IDX_categoria_nombre**: Index on `nombre` for efficient name-based searches
+- **IDX_categoria_estado**: Index on `estado` for filtering active categories
+
+### C# Model
+
+```csharp
+public partial class Categorium
+{
+    public int CodCategoria { get; set; }
+
+    public string Codigo { get; set; } = null!;
+
+    public string Nombre { get; set; } = null!;
+
+    public string? Descripcion { get; set; }
+
+    public bool? Estado { get; set; }
+
+    public DateTime? CreatedDate { get; set; }
+
+    public virtual ICollection<Producto> Productos { get; set; } = new List<Producto>();
+}
+```
+
+### Relationships
+
+- **One-to-Many with productos**: One category can contain multiple products
+
+---
+
+## Productos Table
+
+The `productos` table stores comprehensive product information including pricing, inventory levels, and category associations.
+
+### SQL Schema
+
+```sql
+CREATE TABLE productos(
+    codprod VARCHAR(50) PRIMARY KEY,
+    codCategoria INT NULL,
+    descripcion VARCHAR(500),
+    precioCompra DECIMAL(18,2) NOT NULL,
+    precioVenta DECIMAL(18,2) NOT NULL,
+    stock INT DEFAULT 0,
+    stockMinimo INT DEFAULT 5,
+    estado BIT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE(),
+
+    CONSTRAINT FK_productos_categoria
+    FOREIGN KEY (codCategoria) REFERENCES categoria(codCategoria)
+)
+GO
+
+CREATE INDEX IDX_productos_descripcion ON productos(descripcion)
+GO
+CREATE INDEX IDX_productos_idcategoria ON productos(codCategoria)
+GO
+CREATE INDEX IDX_productos_estado ON productos(estado)
+GO
+-- Useful for restock alerts
+CREATE INDEX IDX_productos_stock ON productos(stock, stockMinimo)
+GO
+```
+
+### Columns
+
+<ParamField path="codprod" type="VARCHAR(50)">
+  Primary key. Product code/SKU that uniquely identifies each product. Business-defined identifier.
+</ParamField>
+
+<ParamField path="codCategoria" type="INT">
+  Foreign key reference to `categoria` table. Assigns the product to a category. Nullable to allow uncategorized products.
+</ParamField>
+
+<ParamField path="descripcion" type="VARCHAR(500)">
+  Product description. Optional field with extended length for detailed product information.
+</ParamField>
+
+<ParamField path="precioCompra" type="DECIMAL(18,2)">
+  Purchase/cost price. Required field. Uses DECIMAL(18,2) for precise monetary calculations. This is the price at which the product is purchased from suppliers.
+</ParamField>
+
+<ParamField path="precioVenta" type="DECIMAL(18,2)">
+  Selling/retail price. Required field. Uses DECIMAL(18,2) for precise monetary calculations. This is the price at which the product is sold to customers.
+</ParamField>
+
+<ParamField path="stock" type="INT">
+  Current inventory quantity. Defaults to 0. Updated automatically by triggers when sales and purchases are processed.
+</ParamField>
+
+<ParamField path="stockMinimo" type="INT">
+  Minimum stock level/reorder point. Defaults to 5. When stock falls below this value, the product should be reordered.
+</ParamField>
+
+<ParamField path="estado" type="BIT">
+  Product status flag. Defaults to 1 (active). Set to 0 to deactivate product without deleting historical transaction data.
+</ParamField>
+
+<ParamField path="created_date" type="DATETIME">
+  Timestamp when the product was created. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `codprod`
+- **Foreign Key**: `codCategoria` references `categoria(codCategoria)`
+
+### Indexes
+
+- **IDX_productos_descripcion**: Index on `descripcion` for text searches
+- **IDX_productos_idcategoria**: Index on `codCategoria` for category-based queries
+- **IDX_productos_estado**: Index on `estado` for filtering active products
+- **IDX_productos_stock**: Composite index on `(stock, stockMinimo)` for efficient restock alert queries
+
+### C# Model
+
+```csharp
+public partial class Producto
+{
+    public string Codprod { get; set; } = null!;
+
+    public int? CodCategoria { get; set; }
+
+    public string? Descripcion { get; set; }
+
+    public decimal PrecioCompra { get; set; }
+
+    public decimal PrecioVenta { get; set; }
+
+    public int? Stock { get; set; }
+
+    public int? StockMinimo { get; set; }
+
+    public bool? Estado { get; set; }
+
+    public DateTime? CreatedDate { get; set; }
+
+    public virtual Categorium? CodCategoriaNavigation { get; set; }
+
+    public virtual ICollection<ComprasDetalle> ComprasDetalles { get; set; } = new List<ComprasDetalle>();
+
+    public virtual ICollection<VentasDetalle> VentasDetalles { get; set; } = new List<VentasDetalle>();
+}
+```
+
+### Relationships
+
+- **Many-to-One with categoria**: Each product can belong to one category (nullable)
+- **One-to-Many with ventasDetalle**: Products can appear in multiple sales line items
+- **One-to-Many with comprasDetalle**: Products can appear in multiple purchase line items
+
+## Entity Relationships
+
+```
+categoria (1) ----< (*) productos
+                         |
+                         +----< (*) ventasDetalle
+                         |
+                         +----< (*) comprasDetalle
+```
+
+## Inventory Management
+
+### Stock Updates
+
+Product stock is automatically managed through database triggers:
+
+**TR_DisminuirStock**: Decreases stock when sales are processed (only for non-voided sales)
+
+```sql
+CREATE TRIGGER TR_DisminuirStock
+ON ventasDetalle
+AFTER INSERT
+AS
+BEGIN
+    UPDATE p
+    SET p.stock = p.stock - i.cantidad
+    FROM productos p
+    INNER JOIN inserted i ON p.codprod = i.codprod
+    INNER JOIN ventas v ON v.norden = i.norden
+    WHERE v.nula = 0
+END
+```
+
+### Reorder Alerts
+
+The composite index on `(stock, stockMinimo)` enables efficient queries to identify products that need restocking:
+
+```sql
+SELECT codprod, descripcion, stock, stockMinimo
+FROM productos
+WHERE stock <= stockMinimo
+AND estado = 1
+```
+
+## Usage Notes
+
+- Products use business codes (VARCHAR) as primary keys for easier human reference
+- The `codCategoria` field is nullable, allowing uncategorized products
+- DECIMAL(18,2) ensures precise currency calculations without floating-point errors
+- The `stock` and `stockMinimo` fields work together for automatic reorder point detection
+- Stock levels are automatically updated by triggers when processing sales
+- The `estado` field allows soft-deletion to preserve historical transaction integrity
+- Categories cannot be hard-deleted if they have associated products

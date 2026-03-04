@@ -1,0 +1,296 @@
+---
+title: Products
+description: Manage product catalog, pricing, inventory levels, and product categories in TechCore Mini ERP
+---
+
+The products module is the core of your inventory management system. It allows you to maintain a comprehensive catalog of products with pricing, stock levels, categories, and automated inventory tracking.
+
+## Product entity
+
+Products are stored in the `Producto` model with the following fields:
+
+<ResponseField name="Codprod" type="string" required>
+  Unique product code identifier (primary key)
+</ResponseField>
+
+<ResponseField name="CodCategoria" type="int">
+  Foreign key reference to the product category. Links to the `Categorium` table
+</ResponseField>
+
+<ResponseField name="Descripcion" type="string">
+  Detailed product description (max 500 characters)
+</ResponseField>
+
+<ResponseField name="PrecioCompra" type="decimal" required>
+  Purchase price or cost price (precision: 18 digits, 2 decimals)
+</ResponseField>
+
+<ResponseField name="PrecioVenta" type="decimal" required>
+  Selling price to customers (precision: 18 digits, 2 decimals)
+</ResponseField>
+
+<ResponseField name="Stock" type="int">
+  Current quantity available in inventory. Defaults to 0
+</ResponseField>
+
+<ResponseField name="StockMinimo" type="int">
+  Minimum stock level threshold for reorder alerts. Defaults to 5
+</ResponseField>
+
+<ResponseField name="Estado" type="bool">
+  Product status flag (true = active, false = inactive). Defaults to true
+</ResponseField>
+
+<ResponseField name="CreatedDate" type="DateTime">
+  Timestamp when the product was created. Automatically set to current date/time
+</ResponseField>
+
+## Database schema
+
+```sql
+CREATE TABLE productos(
+    codprod VARCHAR(50) PRIMARY KEY,
+    codCategoria INT NULL,
+    descripcion VARCHAR(500),
+    precioCompra DECIMAL(18,2) NOT NULL,
+    precioVenta DECIMAL(18,2) NOT NULL,
+    stock INT DEFAULT 0,
+    stockMinimo INT DEFAULT 5,
+    estado BIT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE(),
+    
+    CONSTRAINT FK_productos_categoria
+    FOREIGN KEY (codCategoria) REFERENCES categoria(codCategoria)
+)
+```
+
+### Indexes
+
+The products table includes optimized indexes:
+
+- `IDX_productos_descripcion` - Fast text search on product descriptions
+- `IDX_productos_idcategoria` - Quick filtering by category
+- `IDX_productos_estado` - Filter active/inactive products
+- `IDX_productos_stock` - Critical index on stock and minimum stock levels for reorder alerts
+
+## Relationships
+
+Products have several important relationships:
+
+### Category relationship
+
+- **CodCategoriaNavigation**: Navigation property to the `Categorium` entity, allowing products to be organized into categories
+
+### Transaction relationships
+
+- **ComprasDetalles**: Collection of purchase order line items containing this product
+- **VentasDetalles**: Collection of sales order line items containing this product
+
+## Automated inventory management
+
+### Stock adjustment triggers
+
+The system automatically manages inventory levels through database triggers:
+
+<Info>
+  When a sale is created, the `TR_DisminuirStock` trigger automatically decreases product stock by the quantity sold, but only if the sale is not voided.
+</Info>
+
+```sql
+CREATE TRIGGER TR_DisminuirStock
+ON ventasDetalle
+AFTER INSERT
+AS
+BEGIN
+    UPDATE p
+    SET p.stock = p.stock - i.cantidad
+    FROM productos p
+    INNER JOIN inserted i ON p.codprod = i.codprod
+    INNER JOIN ventas v ON v.norden = i.norden
+    WHERE v.nula = 0
+END
+```
+
+### Reorder point monitoring
+
+The `Stock` and `StockMinimo` fields work together to provide low stock alerts:
+
+- When `Stock` falls below `StockMinimo`, the product needs reordering
+- The indexed query on these fields enables fast identification of products requiring replenishment
+- Default minimum stock is 5 units, but can be adjusted per product based on sales velocity
+
+## Product categories
+
+Products can be organized using the category system. Categories are defined in the `Categorium` model:
+
+<ResponseField name="CodCategoria" type="int" required>
+  Auto-incrementing category identifier (primary key)
+</ResponseField>
+
+<ResponseField name="Codigo" type="string" required>
+  Unique category code for easy reference
+</ResponseField>
+
+<ResponseField name="Nombre" type="string" required>
+  Category name (max 150 characters)
+</ResponseField>
+
+<ResponseField name="Descripcion" type="string">
+  Detailed category description (max 300 characters)
+</ResponseField>
+
+<ResponseField name="Estado" type="bool">
+  Category status flag (true = active, false = inactive). Defaults to true
+</ResponseField>
+
+<ResponseField name="CreatedDate" type="DateTime">
+  Timestamp when the category was created
+</ResponseField>
+
+## User workflows
+
+### Adding a new product
+
+<Steps>
+  <Step title="Create product code">
+    Assign a unique product identifier in the `Codprod` field. Use a consistent naming convention (SKU, barcode, or custom code).
+  </Step>
+  
+  <Step title="Select category">
+    Choose an appropriate category from the `CodCategoria` dropdown to organize the product. Categories help with filtering and reporting.
+  </Step>
+  
+  <Step title="Enter description">
+    Provide a clear product description including key features, specifications, or identifying characteristics.
+  </Step>
+  
+  <Step title="Set pricing">
+    Enter both purchase price (`PrecioCompra`) and selling price (`PrecioVenta`). The difference represents your gross margin.
+  </Step>
+  
+  <Step title="Configure inventory levels">
+    Set initial stock quantity and define the minimum stock threshold for reorder alerts. Adjust `StockMinimo` based on product sales velocity and supplier lead time.
+  </Step>
+  
+  <Step title="Save product">
+    Save the product. The system automatically sets the creation date and activates the product by default.
+  </Step>
+</Steps>
+
+### Managing product pricing
+
+<Tip>
+  The system maintains both purchase and sale prices, allowing you to:
+  - Calculate profit margins automatically
+  - Track cost changes over time
+  - Analyze pricing strategies across categories
+</Tip>
+
+**Price updates**: Update `PrecioCompra` when supplier prices change, and adjust `PrecioVenta` to maintain desired margins.
+
+### Monitoring inventory levels
+
+Use the stock fields to manage inventory effectively:
+
+<CardGroup cols={2}>
+  <Card title="Current stock" icon="boxes-stacked">
+    View real-time inventory levels updated automatically with each sale and purchase
+  </Card>
+  
+  <Card title="Low stock alerts" icon="triangle-exclamation">
+    Identify products below minimum stock levels requiring immediate reordering
+  </Card>
+  
+  <Card title="Stock history" icon="chart-line">
+    Track inventory movements through purchase and sales transactions
+  </Card>
+  
+  <Card title="Automated adjustments" icon="gears">
+    Stock decreases automatically with sales, increases with purchase receipts
+  </Card>
+</CardGroup>
+
+### Managing product categories
+
+<Steps>
+  <Step title="Create categories">
+    Define product categories with unique codes and descriptive names (e.g., "ELECTRONICS", "OFFICE-SUPPLIES", "FURNITURE").
+  </Step>
+  
+  <Step title="Assign products">
+    Link products to categories during product creation or by updating the `CodCategoria` field.
+  </Step>
+  
+  <Step title="Use for organization">
+    Filter products by category in reports, searches, and inventory views.
+  </Step>
+</Steps>
+
+### Product status management
+
+The `Estado` field controls product availability:
+
+- **Active products** (`Estado = true`) are available for new sales and purchases
+- **Inactive products** (`Estado = false`) are hidden from active catalogs but historical transactions remain accessible
+
+<Warning>
+  Deactivating a product does not delete it. Historical sales and purchase records remain intact for reporting and auditing purposes.
+</Warning>
+
+## Profit margin analysis
+
+Use purchase and sale prices to calculate profitability:
+
+```
+Gross Margin = PrecioVenta - PrecioCompra
+Margin Percentage = ((PrecioVenta - PrecioCompra) / PrecioVenta) × 100
+```
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Product code conventions">
+    Establish a systematic approach to product codes:
+    - Use manufacturer SKUs when available
+    - Include category prefixes: `ELEC-001`, `OFF-001`
+    - Incorporate barcodes for retail products
+    - Keep codes short but meaningful
+  </Accordion>
+  
+  <Accordion title="Inventory optimization">
+    - Set `StockMinimo` based on average sales velocity and supplier lead time
+    - Review and adjust minimum stock levels quarterly
+    - Account for seasonal variations in demand
+    - Consider storage costs when setting stock levels
+  </Accordion>
+  
+  <Accordion title="Pricing strategy">
+    - Regularly review and update purchase prices based on supplier changes
+    - Maintain consistent profit margins within product categories
+    - Consider competitive pricing when setting `PrecioVenta`
+    - Document price change history for auditing
+  </Accordion>
+  
+  <Accordion title="Category management">
+    - Keep category structure simple and intuitive
+    - Avoid creating too many subcategories
+    - Ensure every product is assigned to a category
+    - Use categories for targeted promotions and analysis
+  </Accordion>
+  
+  <Accordion title="Data quality">
+    - Write clear, searchable product descriptions
+    - Include brand, model, and specifications in descriptions
+    - Verify pricing accuracy before saving
+    - Perform regular audits of product data
+  </Accordion>
+</AccordionGroup>
+
+## Integration with sales and purchases
+
+Products integrate seamlessly with other modules:
+
+1. **Sales orders**: Products are added to `ventasDetalle` line items, automatically decreasing stock
+2. **Purchase orders**: Products are received through `comprasDetalle`, increasing inventory levels
+3. **Pricing**: Sale price from `PrecioVenta` is used in sales transactions
+4. **Inventory reporting**: Real-time stock levels support accurate inventory valuation

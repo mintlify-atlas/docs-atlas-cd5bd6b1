@@ -1,0 +1,304 @@
+---
+title: Overdue Payments
+description: Monitor late payments and calculate mora penalties at 2% per day for past-due installments
+---
+
+## Overview
+
+The Overdue Payments module automatically identifies installments that are past their due date and calculates late payment penalties (mora). The system applies a 2% daily penalty rate to encourage timely payment.
+
+## Database View: vw_CuotasVencidas
+
+The overdue payments view (`vw_CuotasVencidas`) identifies all unpaid installments past their due date:
+
+```sql
+CREATE VIEW vw_CuotasVencidas
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota,
+    DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS diasAtraso,
+    (pp.montoCuota * 0.02) * DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS moraCalculada
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento < GETDATE()
+AND v.nula = 0
+```
+
+### View Filters
+
+<AccordionGroup>
+  <Accordion title="Unpaid Installments Only">
+    The condition `pp.pagada = 0` ensures only outstanding installments are included. Once an installment is paid, it's automatically removed from the overdue list.
+  </Accordion>
+  
+  <Accordion title="Past Due Date">
+    `pp.fechaVencimiento < GETDATE()` filters for installments where the due date has passed. Payments due today or in the future are excluded.
+  </Accordion>
+  
+  <Accordion title="Active Sales Only">
+    Voided sales (`v.nula = 1`) are excluded to prevent showing penalties on cancelled transactions.
+  </Accordion>
+</AccordionGroup>
+
+## View Model Properties
+
+The `VwCuotasVencida` class in `TechCore.Models` represents overdue payment data:
+
+<ParamField path="Norden" type="string" required>
+  The order number associated with this installment
+</ParamField>
+
+<ParamField path="Cliente" type="string" required>
+  Customer name from the `clientes` table
+</ParamField>
+
+<ParamField path="NumeroCuota" type="int" required>
+  Installment number (1, 2, 3, etc.) within the payment plan
+</ParamField>
+
+<ParamField path="FechaVencimiento" type="DateOnly" required>
+  The original due date for this installment
+</ParamField>
+
+<ParamField path="MontoCuota" type="decimal" required>
+  The base installment amount before penalties
+</ParamField>
+
+<ParamField path="DiasAtraso" type="int" optional>
+  Number of days past the due date, calculated as `DATEDIFF(DAY, fechaVencimiento, GETDATE())`
+</ParamField>
+
+<ParamField path="MoraCalculada" type="decimal" optional>
+  Late payment penalty amount calculated using the formula: `(montoCuota * 0.02) * diasAtraso`
+</ParamField>
+
+## Mora Calculation Formula
+
+The system calculates late payment penalties (mora) using a daily compound rate:
+
+<CodeGroup>
+```sql SQL Formula
+(pp.montoCuota * 0.02) * DATEDIFF(DAY, pp.fechaVencimiento, GETDATE())
+```
+
+```csharp C# Calculation
+decimal dailyPenaltyRate = 0.02m; // 2% per day
+int daysLate = (DateTime.Today - installment.FechaVencimiento).Days;
+decimal penalty = installment.MontoCuota * dailyPenaltyRate * daysLate;
+```
+</CodeGroup>
+
+### Penalty Rate Breakdown
+
+<Steps>
+  <Step title="Daily Rate: 2%">
+    The penalty rate is 2% of the installment amount per day (0.02 in the formula)
+  </Step>
+  
+  <Step title="Days Late Calculation">
+    The system calculates the number of days between the due date (`fechaVencimiento`) and today (`GETDATE()`)
+  </Step>
+  
+  <Step title="Total Penalty">
+    Multiply the daily penalty (2% of installment) by the number of days late
+  </Step>
+</Steps>
+
+### Example Calculation
+
+<Tip>
+**Example**: An installment of $1,000.00 that is 15 days overdue
+
+- Base installment: $1,000.00
+- Daily penalty: $1,000.00 × 0.02 = $20.00 per day
+- Days late: 15 days
+- **Total mora**: $20.00 × 15 = $300.00
+- **Amount due**: $1,000.00 + $300.00 = $1,300.00
+</Tip>
+
+<Warning>
+At 2% per day, penalties accumulate quickly:
+- 10 days late = 20% penalty
+- 30 days late = 60% penalty
+- 50 days late = 100% penalty (doubles the amount)
+
+This high rate is designed to strongly incentivize timely payment.
+</Warning>
+
+## Upcoming Payments View
+
+The system also tracks installments that are due soon but not yet overdue:
+
+### vw_CuotasPorVencer
+
+```sql
+CREATE VIEW vw_CuotasPorVencer
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento >= GETDATE()
+AND v.nula = 0
+```
+
+The `VwCuotasPorVencer` model includes the same fields as overdue payments but without penalty calculations, since these payments are not yet late.
+
+## Usage Examples
+
+### Query All Overdue Payments
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var overduePayments = context.VwCuotasVencidas
+        .OrderByDescending(cv => cv.DiasAtraso)
+        .ToList();
+        
+    foreach (var overdue in overduePayments)
+    {
+        Console.WriteLine($"Customer: {overdue.Cliente}");
+        Console.WriteLine($"Order: {overdue.Norden}, Installment #{overdue.NumeroCuota}");
+        Console.WriteLine($"Due Date: {overdue.FechaVencimiento}");
+        Console.WriteLine($"Days Late: {overdue.DiasAtraso}");
+        Console.WriteLine($"Base Amount: {overdue.MontoCuota:C}");
+        Console.WriteLine($"Penalty: {overdue.MoraCalculada:C}");
+        Console.WriteLine($"Total Due: {(overdue.MontoCuota + overdue.MoraCalculada):C}");
+        Console.WriteLine();
+    }
+}
+```
+
+### Calculate Total Penalties
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var totalPenalties = context.VwCuotasVencidas
+        .Sum(cv => cv.MoraCalculada ?? 0);
+        
+    Console.WriteLine($"Total Penalties: {totalPenalties:C}");
+}
+```
+
+### Find Critical Overdue Accounts (30+ days)
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var criticalAccounts = context.VwCuotasVencidas
+        .Where(cv => cv.DiasAtraso >= 30)
+        .GroupBy(cv => cv.Cliente)
+        .Select(g => new {
+            Cliente = g.Key,
+            TotalOverdue = g.Sum(x => x.MontoCuota),
+            TotalPenalties = g.Sum(x => x.MoraCalculada ?? 0),
+            InstallmentCount = g.Count()
+        })
+        .OrderByDescending(x => x.TotalPenalties)
+        .ToList();
+        
+    foreach (var account in criticalAccounts)
+    {
+        Console.WriteLine($"Customer: {account.Cliente}");
+        Console.WriteLine($"Overdue Installments: {account.InstallmentCount}");
+        Console.WriteLine($"Base Amount: {account.TotalOverdue:C}");
+        Console.WriteLine($"Penalties: {account.TotalPenalties:C}");
+        Console.WriteLine();
+    }
+}
+```
+
+### Get Upcoming Payments (Next 7 Days)
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var nextWeekDue = context.VwCuotasPorVencers
+        .Where(cp => cp.FechaVencimiento <= DateOnly.FromDateTime(DateTime.Today.AddDays(7)))
+        .OrderBy(cp => cp.FechaVencimiento)
+        .ToList();
+        
+    Console.WriteLine("Payments due in the next 7 days:");
+    foreach (var payment in nextWeekDue)
+    {
+        Console.WriteLine($"{payment.Cliente} - {payment.MontoCuota:C} due {payment.FechaVencimiento}");
+    }
+}
+```
+
+## Payment Status Workflow
+
+<Steps>
+  <Step title="Payment Plan Created">
+    When a credit sale is made, installments are created in `planPagos` with `pagada = 0`
+  </Step>
+  
+  <Step title="Before Due Date">
+    Installment appears in `vw_CuotasPorVencer` (upcoming payments view)
+  </Step>
+  
+  <Step title="After Due Date (Unpaid)">
+    Installment moves to `vw_CuotasVencidas` (overdue payments view) and penalty calculation begins
+  </Step>
+  
+  <Step title="Payment Received">
+    When payment is posted to `abonosVentas`, the `TR_ActualizarSaldo` trigger sets `pagada = 1` and the installment is removed from both views
+  </Step>
+</Steps>
+
+## Performance Optimization
+
+The database includes indexes to optimize overdue payment queries:
+
+```sql
+-- Index for filtering unpaid installments
+CREATE INDEX IDX_planPagos_pagada ON planPagos(pagada) WHERE pagada = 0
+
+-- Index for due date filtering
+CREATE INDEX IDX_planPagos_fechaVencimiento ON planPagos(fechaVencimiento)
+
+-- Index for filtering active sales
+CREATE INDEX IDX_ventas_nula ON ventas(nula) WHERE nula = 0
+```
+
+<Note>
+These filtered indexes significantly improve query performance since most queries focus on unpaid installments and active sales.
+</Note>
+
+## Related Tables
+
+<CardGroup cols={2}>
+  <Card title="planPagos" icon="calendar-days">
+    Payment schedule containing all installments with due dates and payment status
+  </Card>
+  
+  <Card title="ventas" icon="receipt">
+    Credit sales that generate payment plans and installments
+  </Card>
+  
+  <Card title="abonosVentas" icon="hand-holding-dollar">
+    Payment records that mark installments as paid via the TR_ActualizarSaldo trigger
+  </Card>
+  
+  <Card title="clientes" icon="user">
+    Customer information for overdue payment notifications and collection activities
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Accounts Receivable](/financial/accounts-receivable) - Overall receivables tracking and balances
+- [Account Statements](/financial/account-statements) - Detailed customer account statements

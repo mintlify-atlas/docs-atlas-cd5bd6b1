@@ -1,0 +1,428 @@
+---
+title: Database Setup
+description: Step-by-step guide to installing and configuring the TechCore database
+---
+
+## Prerequisites
+
+Before setting up the TechCore database, ensure you have:
+
+- SQL Server 2016 or later (Express, Standard, or Enterprise)
+- SQL Server Management Studio (SSMS) or Azure Data Studio
+- Appropriate permissions to create databases and tables
+- .NET 8.0 SDK (for running the application)
+
+## Installation Methods
+
+You can set up the TechCore database using either of these methods:
+
+<CardGroup cols={2}>
+  <Card title="SQL Script" icon="file-code">
+    Execute the provided SQL script for manual setup
+  </Card>
+  <Card title="Entity Framework Migrations" icon="database">
+    Use EF Core migrations (if available in your deployment)
+  </Card>
+</CardGroup>
+
+## Method 1: SQL Script Installation
+
+This is the recommended method for initial setup and production deployments.
+
+<Steps>
+  <Step title="Locate the SQL Script">
+    The database creation script is located at:
+    
+    ```
+    Script SQL SERVER/TechCoreQuery.sql
+    ```
+    
+    This script contains all necessary DDL statements to create the complete database schema.
+  </Step>
+
+  <Step title="Open SQL Server Management Studio">
+    Launch SSMS and connect to your SQL Server instance:
+    
+    - **Server name**: `.` (local instance) or your server address
+    - **Authentication**: Windows Authentication or SQL Server Authentication
+    - Click **Connect**
+  </Step>
+
+  <Step title="Execute the Database Creation Script">
+    <Tabs>
+      <Tab title="Using SSMS">
+        1. Click **File** → **Open** → **File**
+        2. Navigate to `TechCoreQuery.sql` and open it
+        3. Review the script contents
+        4. Click **Execute** (F5) to run the entire script
+        5. Check the **Messages** tab for any errors
+      </Tab>
+      <Tab title="Using sqlcmd">
+        ```bash
+        sqlcmd -S .\\SQLEXPRESS -E -i "TechCoreQuery.sql"
+        ```
+      </Tab>
+      <Tab title="Using Azure Data Studio">
+        1. Open Azure Data Studio
+        2. Click **File** → **Open File**
+        3. Select `TechCoreQuery.sql`
+        4. Click **Run** or press F5
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Verify Database Creation">
+    Confirm the database and all objects were created successfully:
+    
+    ```sql
+    USE TechCore
+    GO
+    
+    -- List all tables
+    SELECT TABLE_NAME 
+    FROM INFORMATION_SCHEMA.TABLES 
+    WHERE TABLE_TYPE = 'BASE TABLE'
+    ORDER BY TABLE_NAME
+    
+    -- List all views
+    SELECT TABLE_NAME 
+    FROM INFORMATION_SCHEMA.VIEWS
+    ORDER BY TABLE_NAME
+    
+    -- List all triggers
+    SELECT name, parent_class_desc
+    FROM sys.triggers
+    WHERE parent_class = 1
+    ```
+    
+    You should see:
+    - 12 tables (abonosVentas, categoria, clientes, compras, comprasDetalle, planPagos, productos, proveedores, rol, users, ventas, ventasDetalle)
+    - 3 views (vw_CuotasPorVencer, vw_CuotasVencidas, vw_EstadoCuenta)
+    - 2 triggers (TR_ActualizarSaldo, TR_DisminuirStock)
+  </Step>
+
+  <Step title="Verify Indexes">
+    Check that all performance indexes were created:
+    
+    ```sql
+    SELECT 
+        OBJECT_NAME(i.object_id) AS TableName,
+        i.name AS IndexName,
+        i.type_desc AS IndexType
+    FROM sys.indexes i
+    WHERE i.object_id IN (
+        SELECT object_id 
+        FROM sys.tables
+    )
+    AND i.name IS NOT NULL
+    ORDER BY TableName, IndexName
+    ```
+    
+    You should see 30+ indexes across all tables.
+  </Step>
+</Steps>
+
+## Method 2: Entity Framework Migrations
+
+If your deployment includes EF Core migrations:
+
+```bash
+# Navigate to the project directory
+cd TechCore
+
+# Apply migrations to create the database
+dotnet ef database update
+```
+
+<Note>
+  The SQL script method is preferred as it includes all indexes, triggers, and views that may not be fully represented in EF migrations.
+</Note>
+
+## Configuration
+
+### Connection String Setup
+
+After creating the database, configure the connection string in your application.
+
+<Steps>
+  <Step title="Locate appsettings.json">
+    Open the configuration file:
+    
+    ```
+    TechCore/appsettings.json
+    ```
+  </Step>
+
+  <Step title="Configure Connection String">
+    Update the `DefaultConnection` string based on your environment:
+    
+    <CodeGroup>
+      ```json Windows Authentication (Default)
+      {
+        "ConnectionStrings": {
+          "DefaultConnection": "Data Source=.\\;Database=TechCore;Trusted_Connection=True;TrustServerCertificate=True;"
+        }
+      }
+      ```
+      
+      ```json SQL Server Authentication
+      {
+        "ConnectionStrings": {
+          "DefaultConnection": "Data Source=.\\;Database=TechCore;User Id=sa;Password=YourPassword;TrustServerCertificate=True;"
+        }
+      }
+      ```
+      
+      ```json Remote Server
+      {
+        "ConnectionStrings": {
+          "DefaultConnection": "Data Source=192.168.1.100;Database=TechCore;User Id=techcore_user;Password=YourPassword;TrustServerCertificate=True;"
+        }
+      }
+      ```
+      
+      ```json Azure SQL Database
+      {
+        "ConnectionStrings": {
+          "DefaultConnection": "Server=tcp:yourserver.database.windows.net,1433;Database=TechCore;User ID=youradmin;Password=YourPassword;Encrypt=True;"
+        }
+      }
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Test Connection">
+    Run the application to verify the database connection:
+    
+    ```bash
+    cd TechCore
+    dotnet run
+    ```
+    
+    Check the console output for any connection errors.
+  </Step>
+</Steps>
+
+## Initial Data Population
+
+After database creation, you'll need to populate initial data:
+
+### Create Default Roles
+
+```sql
+USE TechCore
+GO
+
+INSERT INTO rol (nombreRol, habilitado) VALUES
+('Administrador', 1),
+('Vendedor', 1),
+('Almacenero', 1),
+('Contador', 1)
+GO
+```
+
+### Create First User
+
+<Warning>
+  Always use hashed passwords in production. The example below uses plain text for demonstration only.
+</Warning>
+
+```sql
+INSERT INTO users (code, nombre, username, pwd, phone, idrol, email) VALUES
+('USR-001', 'Administrator', 'admin', 'HASHED_PASSWORD_HERE', '555-0100', 1, 'admin@techcore.local')
+GO
+```
+
+### Create Sample Categories
+
+```sql
+INSERT INTO categoria (codigo, nombre, descripcion, estado) VALUES
+('CAT-001', 'Electrónica', 'Dispositivos y componentes electrónicos', 1),
+('CAT-002', 'Herramientas', 'Herramientas manuales y eléctricas', 1),
+('CAT-003', 'Oficina', 'Suministros de oficina', 1)
+GO
+```
+
+## Database Maintenance
+
+### Backup Recommendations
+
+<Steps>
+  <Step title="Configure Automatic Backups">
+    Set up SQL Server backup jobs for:
+    
+    - **Full backup**: Daily at 2:00 AM
+    - **Differential backup**: Every 6 hours
+    - **Transaction log backup**: Every 15 minutes (if using Full recovery model)
+  </Step>
+
+  <Step title="Manual Backup">
+    To create a manual backup:
+    
+    ```sql
+    BACKUP DATABASE TechCore
+    TO DISK = 'C:\\Backups\\TechCore_Full.bak'
+    WITH FORMAT, INIT, 
+    NAME = 'TechCore Full Backup',
+    COMPRESSION
+    GO
+    ```
+  </Step>
+</Steps>
+
+### Index Maintenance
+
+Rebuild indexes monthly to maintain performance:
+
+```sql
+USE TechCore
+GO
+
+-- Rebuild all indexes
+EXEC sp_MSforeachtable @command1="DBCC DBREINDEX ('?')"
+GO
+
+-- Update statistics
+EXEC sp_updatestats
+GO
+```
+
+### Monitor Database Size
+
+```sql
+SELECT 
+    DB_NAME() AS DatabaseName,
+    SUM(size) * 8 / 1024 AS SizeMB
+FROM sys.database_files
+GO
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: Database 'TechCore' already exists">
+    If you need to recreate the database:
+    
+    ```sql
+    -- Disconnect all users first
+    ALTER DATABASE TechCore SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+    GO
+    
+    DROP DATABASE TechCore
+    GO
+    ```
+    
+    Then re-run the creation script.
+  </Accordion>
+
+  <Accordion title="Error: Cannot open database requested by the login">
+    Verify your user has access:
+    
+    ```sql
+    USE TechCore
+    GO
+    
+    CREATE USER [YourWindowsUser] FOR LOGIN [DOMAIN\\YourWindowsUser]
+    GO
+    
+    ALTER ROLE db_owner ADD MEMBER [YourWindowsUser]
+    GO
+    ```
+  </Accordion>
+
+  <Accordion title="Error: Login failed for user 'NT AUTHORITY\\NETWORK SERVICE'">
+    This occurs when using IIS. Grant the application pool identity access:
+    
+    ```sql
+    CREATE LOGIN [IIS APPPOOL\\YourAppPoolName] FROM WINDOWS
+    GO
+    
+    USE TechCore
+    GO
+    
+    CREATE USER [IIS APPPOOL\\YourAppPoolName] FOR LOGIN [IIS APPPOOL\\YourAppPoolName]
+    GO
+    
+    ALTER ROLE db_datareader ADD MEMBER [IIS APPPOOL\\YourAppPoolName]
+    ALTER ROLE db_datawriter ADD MEMBER [IIS APPPOOL\\YourAppPoolName]
+    GO
+    ```
+  </Accordion>
+
+  <Accordion title="Connection Timeout Errors">
+    Increase the timeout in your connection string:
+    
+    ```
+    Data Source=.;Database=TechCore;Trusted_Connection=True;Connect Timeout=30;TrustServerCertificate=True;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Security Hardening
+
+<Warning>
+  Apply these security measures before deploying to production.
+</Warning>
+
+### Create Application User with Limited Permissions
+
+```sql
+-- Create login
+CREATE LOGIN techcore_app WITH PASSWORD = 'StrongPassword123!'
+GO
+
+USE TechCore
+GO
+
+-- Create user
+CREATE USER techcore_app FOR LOGIN techcore_app
+GO
+
+-- Grant only necessary permissions
+ALTER ROLE db_datareader ADD MEMBER techcore_app
+ALTER ROLE db_datawriter ADD MEMBER techcore_app
+GO
+
+-- Grant EXECUTE on stored procedures (if any)
+GRANT EXECUTE TO techcore_app
+GO
+```
+
+### Enable Transparent Data Encryption (Optional)
+
+For sensitive data protection:
+
+```sql
+-- Create master key
+USE master
+GO
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'YourMasterKeyPassword'
+GO
+
+-- Create certificate
+CREATE CERTIFICATE TechCoreCert WITH SUBJECT = 'TechCore TDE Certificate'
+GO
+
+-- Create database encryption key
+USE TechCore
+GO
+CREATE DATABASE ENCRYPTION KEY
+WITH ALGORITHM = AES_256
+ENCRYPTION BY SERVER CERTIFICATE TechCoreCert
+GO
+
+-- Enable encryption
+ALTER DATABASE TechCore SET ENCRYPTION ON
+GO
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Entity Reference" icon="table" href="/database/entities">
+    Learn about all database entities and their relationships
+  </Card>
+  <Card title="Database Overview" icon="diagram-project" href="/database/overview">
+    Understand the database architecture and design decisions
+  </Card>
+</CardGroup>

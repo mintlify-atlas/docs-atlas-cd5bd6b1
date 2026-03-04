@@ -1,0 +1,249 @@
+---
+title: Purchase Management
+description: Learn how to manage supplier purchases and inventory procurement in TechCore Mini ERP
+---
+
+## Overview
+
+The purchase system handles inventory procurement from suppliers. Purchases automatically update product stock levels and maintain detailed records of costs and quantities for inventory management.
+
+## Purchase Entity
+
+The `Compra` entity represents a complete purchase transaction from a supplier.
+
+### Entity Fields
+
+<ParamField path="Norden" type="string" required>
+  Unique purchase order identifier (primary key)
+</ParamField>
+
+<ParamField path="OrdenN" type="int" required>
+  Sequential order number for display purposes
+</ParamField>
+
+<ParamField path="Codprov" type="string" required>
+  Supplier code (foreign key to `proveedores` table)
+</ParamField>
+
+<ParamField path="Codusu" type="int" required>
+  User ID who created the purchase (foreign key to `users` table)
+</ParamField>
+
+<ParamField path="Fecha" type="DateTime">
+  Purchase date and time (defaults to current datetime)
+</ParamField>
+
+<ParamField path="Subtotal" type="decimal" required>
+  Sum of all line items before tax
+</ParamField>
+
+<ParamField path="Iva" type="decimal" required>
+  Tax amount (IVA - Value Added Tax)
+</ParamField>
+
+<ParamField path="Total" type="decimal" required>
+  Final purchase total (Subtotal + IVA)
+</ParamField>
+
+<ParamField path="Estado" type="int" default="1">
+  Purchase status (1 = active, other values for different states)
+</ParamField>
+
+### Relationships
+
+- **ComprasDetalles**: Collection of line items for this purchase
+- **CodprovNavigation**: Supplier information
+- **CodusuNavigation**: User who created the purchase
+
+## Purchase Details
+
+Each purchase contains one or more line items stored in the `ComprasDetalle` entity.
+
+### Line Item Fields
+
+<ParamField path="Id" type="int" required>
+  Auto-generated line item identifier
+</ParamField>
+
+<ParamField path="Norden" type="string" required>
+  Purchase order reference (foreign key to `compras`)
+</ParamField>
+
+<ParamField path="Codprod" type="string" required>
+  Product code (foreign key to `productos`)
+</ParamField>
+
+<ParamField path="Cantidad" type="int" required>
+  Quantity of product purchased
+</ParamField>
+
+<ParamField path="Precio" type="decimal" required>
+  Unit purchase price for this product
+</ParamField>
+
+<ParamField path="Subtotal" type="decimal" required>
+  Line total (Cantidad × Precio)
+</ParamField>
+
+### Relationships
+
+- **NordenNavigation**: Parent purchase record
+- **CodprodNavigation**: Product information
+
+## Creating a Purchase
+
+<Steps>
+  <Step title="Select Supplier">
+    Choose the supplier (`Codprov`) from the `proveedores` table. Ensure the supplier is active (`estado = 1`).
+  </Step>
+  
+  <Step title="Create Purchase Header">
+    Create a new `Compra` record with:
+    - Unique `Norden` (purchase order ID)
+    - Sequential `OrdenN` for display
+    - Supplier code (`Codprov`)
+    - User creating the purchase (`Codusu`)
+    - Current date/time (`Fecha`)
+  </Step>
+  
+  <Step title="Add Purchase Line Items">
+    Create `ComprasDetalle` records for each product being purchased:
+    - Product code (`Codprod`)
+    - Quantity (`Cantidad`)
+    - Unit price (`Precio`)
+    - Calculate line subtotal: `Cantidad × Precio`
+    
+    The system will automatically increase inventory stock when purchase details are saved.
+  </Step>
+  
+  <Step title="Calculate Totals">
+    Sum all line item subtotals to get the purchase `Subtotal`, calculate `Iva` (tax), and compute the final `Total`:
+    ```
+    Subtotal = SUM(ComprasDetalle.Subtotal)
+    Iva = Subtotal × IVA_RATE
+    Total = Subtotal + Iva
+    ```
+  </Step>
+  
+  <Step title="Update Product Costs">
+    Optionally update the `precioCompra` field in the `productos` table to reflect the latest purchase price for cost tracking and margin analysis.
+  </Step>
+</Steps>
+
+## Inventory Impact
+
+When purchase details are saved, the system should increase product stock levels:
+
+```sql
+UPDATE productos
+SET stock = stock + cantidad
+WHERE codprod = @ProductCode
+```
+
+This ensures inventory counts reflect received merchandise.
+
+## Cascade Deletion
+
+Purchase details are configured with `ON DELETE CASCADE`, meaning:
+
+- Deleting a purchase (`Compra`) automatically deletes all associated line items (`ComprasDetalle`)
+- This maintains referential integrity
+- Ensure stock adjustments are handled before deletion if necessary
+
+## Database Schema
+
+```sql
+CREATE TABLE compras(
+    norden VARCHAR(50) PRIMARY KEY,
+    ordenN INT NOT NULL,
+    codprov VARCHAR(50) NOT NULL,
+    codusu INT NOT NULL,
+    fecha DATETIME DEFAULT GETDATE(),
+    subtotal DECIMAL(18,2) NOT NULL,
+    iva DECIMAL(18,2) NOT NULL,
+    total DECIMAL(18,2) NOT NULL,
+    estado INT DEFAULT 1,
+    FOREIGN KEY (codprov) REFERENCES proveedores(codprovee),
+    FOREIGN KEY (codusu) REFERENCES users(id)
+)
+
+CREATE TABLE comprasDetalle(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    codprod VARCHAR(50) NOT NULL,
+    cantidad INT NOT NULL,
+    precio DECIMAL(18,2) NOT NULL,
+    subtotal DECIMAL(18,2) NOT NULL,
+    FOREIGN KEY (norden) REFERENCES compras(norden) ON DELETE CASCADE,
+    FOREIGN KEY (codprod) REFERENCES productos(codprod)
+)
+```
+
+## Key Differences from Sales
+
+| Aspect | Purchases | Sales |
+|--------|-----------|-------|
+| **Entity** | `Compra` | `Venta` |
+| **Partner** | Supplier (`proveedores`) | Customer (`clientes`) |
+| **Stock Impact** | Increases inventory | Decreases inventory |
+| **Payment Plans** | Not supported | Supports CONTADO/CREDITO |
+| **Interest** | N/A | Available for credit sales |
+| **Voiding** | Use `estado` field | Use `nula` field |
+
+## Stock Management
+
+Purchases work together with the inventory system:
+
+- **Stock Level**: Updated automatically when purchase details are saved
+- **Minimum Stock**: Check `stockMinimo` to identify reorder points
+- **Purchase Price**: Update `precioCompra` for margin calculations
+- **Low Stock Alerts**: Index on `stock, stockMinimo` enables efficient queries
+
+```sql
+-- Find products below minimum stock
+SELECT codprod, descripcion, stock, stockMinimo
+FROM productos
+WHERE stock < stockMinimo
+AND estado = 1
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Validate Stock Levels">
+    Before creating a purchase, verify current stock levels to avoid over-ordering:
+    ```csharp
+    var product = await context.Productos
+        .FirstOrDefaultAsync(p => p.Codprod == productCode);
+    
+    if (product.Stock > product.StockMinimo * 3) {
+        // Consider reducing order quantity
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Track Purchase History">
+    Use purchase history to identify reliable suppliers and track price trends:
+    ```sql
+    SELECT p.nombre, AVG(cd.precio) as avgPrice, COUNT(*) as orderCount
+    FROM compras c
+    INNER JOIN proveedores p ON c.codprov = p.codprovee
+    INNER JOIN comprasDetalle cd ON c.norden = cd.norden
+    WHERE cd.codprod = @ProductCode
+    GROUP BY p.nombre
+    ```
+  </Accordion>
+  
+  <Accordion title="Maintain Accurate Dates">
+    Record accurate purchase dates for:
+    - Cost of goods sold (COGS) calculations
+    - Supplier performance analysis
+    - Seasonal demand planning
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Sales](/transactions/sales) - Managing customer sales transactions
+- [Products](/entities/products) - Product and inventory management
+- [Suppliers](/entities/suppliers) - Supplier information management

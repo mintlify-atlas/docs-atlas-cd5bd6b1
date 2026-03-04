@@ -1,0 +1,338 @@
+---
+title: Getting started
+description: Step-by-step guide to setting up your development environment and running TechCore Mini ERP for the first time.
+---
+
+This guide will walk you through setting up TechCore Mini ERP on your local machine, from installing prerequisites to creating your first sale.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- .NET 10.0 SDK or later
+- SQL Server 2019 or later (Express Edition works fine)
+- Node.js 18+ and npm (for Tailwind CSS compilation)
+- A code editor (Visual Studio 2022, VS Code, or Rider recommended)
+- Git (for cloning the repository)
+
+<Warning>
+  TechCore requires .NET 10.0 specifically. Earlier versions like .NET 8.0 or 9.0 will not work due to the target framework specified in the project file.
+</Warning>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the TechCore repository to your local machine:
+
+    ```bash
+    git clone git@github.com:your-org/Grupo2-MiniERP.git
+    cd Grupo2-MiniERP/TechCore
+    ```
+  </Step>
+
+  <Step title="Install npm dependencies">
+    TechCore uses Tailwind CSS for styling. Install the required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    This will install:
+    - `tailwindcss` (4.2.1) - Utility-first CSS framework
+    - `@tailwindcss/cli` (4.2.1) - Tailwind CLI tools
+    - `daisyui` (5.5.19) - Component library for Tailwind
+
+    <Note>
+      The CSS build process runs automatically before each build via the `Tailwind` MSBuild target defined in `TechCore.csproj`.
+    </Note>
+  </Step>
+
+  <Step title="Configure database connection">
+    Open `appsettings.json` and update the connection string to match your SQL Server instance:
+
+    ```json appsettings.json
+    {
+      "ConnectionStrings": {
+        "DefaultConnection": "Data Source=.\\;Database=TechCore;Trusted_Connection=True;TrustServerCertificate=True;"
+      }
+    }
+    ```
+
+    **Connection string parameters:**
+    - `Data Source`: Your SQL Server instance (`.` for local, `localhost`, or a remote server)
+    - `Database`: The database name (default: `TechCore`)
+    - `Trusted_Connection=True`: Use Windows Authentication
+    - `TrustServerCertificate=True`: Accept self-signed certificates
+
+    <Note>
+      If using SQL Server Authentication instead of Windows Authentication, replace `Trusted_Connection=True` with `User Id=your_username;Password=your_password`.
+    </Note>
+  </Step>
+
+  <Step title="Create the database">
+    The TechCore database should be created with the proper schema including tables, views, and triggers. If you have a SQL script, run it against your SQL Server instance:
+
+    ```bash
+    # Using sqlcmd
+    sqlcmd -S localhost -d master -i database-schema.sql
+    ```
+
+    Or use SQL Server Management Studio (SSMS) to execute the schema script.
+
+    The database includes:
+    - Core tables: `users`, `clientes`, `proveedores`, `productos`, `categoria`
+    - Transaction tables: `ventas`, `compras`, `ventasDetalle`, `comprasDetalle`
+    - Payment tables: `planPagos`, `abonosVentas`
+    - Views: `vw_CuotasPorVencer`, `vw_CuotasVencidas`, `vw_EstadoCuenta`
+    - Triggers: `TR_DisminuirStock`, `TR_ActualizarSaldo`
+  </Step>
+
+  <Step title="Verify Entity Framework context">
+    The application uses Entity Framework Core to interact with the database. The `TechCoreContext` is configured in `Program.cs`:
+
+    ```csharp Program.cs
+    builder.Services.AddDbContext<TechCoreContext>(options => { 
+        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        options.UseSqlServer(connectionString);
+    });
+    ```
+
+    If you need to update the models from the database, use EF Core scaffolding:
+
+    ```bash
+    dotnet ef dbcontext scaffold "your-connection-string" Microsoft.EntityFrameworkCore.SqlServer -o Models -c TechCoreContext --context-dir Datos --force
+    ```
+  </Step>
+
+  <Step title="Build and run the application">
+    Build the application using the .NET CLI:
+
+    ```bash
+    dotnet build
+    ```
+
+    This will:
+    1. Restore NuGet packages (Entity Framework Core 10.0.3)
+    2. Run the Tailwind CSS build task (`npm run css:build`)
+    3. Compile the C# code
+
+    Then run the application:
+
+    ```bash
+    dotnet run
+    ```
+
+    The application will start on `https://localhost:5001` (or the port specified in `launchSettings.json`).
+  </Step>
+
+  <Step title="Access the application">
+    Open your browser and navigate to:
+
+    ```
+    https://localhost:5001
+    ```
+
+    You should see the TechCore home page.
+  </Step>
+</Steps>
+
+## Initial setup
+
+Once the application is running, you'll need to set up your initial data:
+
+### Create user accounts
+
+TechCore uses a role-based access system. The `users` table structure:
+
+```csharp Models/User.cs
+public partial class User
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = null!;      // Unique user code (10 chars)
+    public string Nombre { get; set; } = null!;    // Full name
+    public string Username { get; set; } = null!;  // Login username (unique)
+    public string Pwd { get; set; } = null!;       // Password
+    public string? Phone { get; set; }
+    public int Idrol { get; set; }                 // Role ID (FK to rol table)
+    public string? Email { get; set; }
+    public DateTime? CreatedDate { get; set; }     // Auto-set to GETDATE()
+}
+```
+
+<Warning>
+  Passwords in the current schema are stored as plain text. For production use, implement password hashing using ASP.NET Core Identity or a library like BCrypt.
+</Warning>
+
+### Configure product categories
+
+Create categories to organize your products:
+
+```csharp Models/Categorium.cs
+public partial class Categorium
+{
+    public int CodCategoria { get; set; }        // Auto-generated ID
+    public string Codigo { get; set; } = null!;   // Unique category code
+    public string Nombre { get; set; } = null!;   // Category name
+    public string? Descripcion { get; set; }
+    public bool? Estado { get; set; }             // Active status (default: true)
+    public DateTime? CreatedDate { get; set; }    // Auto-set timestamp
+}
+```
+
+**Example categories:**
+- Electronics
+- Office Supplies
+- Furniture
+- Hardware
+
+### Add customers
+
+Register customers who will purchase from your business:
+
+```csharp Models/Cliente.cs
+public partial class Cliente
+{
+    public string Codclien { get; set; } = null!;  // Unique customer code
+    public string Nombre { get; set; } = null!;    // Customer name
+    public string? Telefono { get; set; }          // Phone (15 chars max)
+    public string? Email { get; set; }             // Email (200 chars max)
+    public string? Direccion { get; set; }         // Address (300 chars max)
+    public bool? Estado { get; set; }              // Active status
+    public DateTime? CreatedDate { get; set; }     // Registration date
+}
+```
+
+### Register suppliers
+
+Add suppliers for purchase order management:
+
+```csharp Models/Proveedore.cs
+public partial class Proveedore
+{
+    public string Codprovee { get; set; } = null!; // Unique supplier code
+    public string Nombre { get; set; } = null!;    // Supplier name
+    public string? Telefono { get; set; }
+    public string? Email { get; set; }
+    public string? Direccion { get; set; }
+    public int? Estado { get; set; }               // Active status (default: 1)
+    public DateTime? CreatedDate { get; set; }
+}
+```
+
+### Create products
+
+Add products to your inventory:
+
+```csharp Models/Producto.cs
+public partial class Producto
+{
+    public string Codprod { get; set; } = null!;     // Unique product code
+    public int? CodCategoria { get; set; }           // Category FK
+    public string? Descripcion { get; set; }         // Product description
+    public decimal PrecioCompra { get; set; }        // Purchase price
+    public decimal PrecioVenta { get; set; }         // Sale price
+    public int? Stock { get; set; }                  // Current stock (default: 0)
+    public int? StockMinimo { get; set; }            // Alert threshold (default: 5)
+    public bool? Estado { get; set; }                // Active status
+    public DateTime? CreatedDate { get; set; }
+}
+```
+
+<Note>
+  The `Stock` field updates automatically when sales are recorded via the `TR_DisminuirStock` database trigger on the `ventasDetalle` table.
+</Note>
+
+## Making your first sale
+
+With the initial data in place, you can now create a sales order:
+
+1. **Select customer**: Choose from registered customers (using `Codclien`)
+2. **Add products**: Select products and quantities (creates `VentasDetalle` records)
+3. **Choose payment type**: 
+   - `CONTADO` - Cash payment (full amount due immediately)
+   - Installment - Set `Meses` (payment term) and `TasaInteres` (interest rate)
+4. **Calculate totals**: System computes `Subtotal`, `Iva` (tax), and `Total`
+5. **Generate payment plan**: If installment selected, `PlanPago` records are created automatically
+6. **Record sale**: The `Venta` record is saved with initial `Saldo` equal to `Total`
+
+**What happens automatically:**
+- Stock levels decrease when `VentasDetalle` records are inserted (via `TR_DisminuirStock` trigger)
+- Payment plan is generated with due dates for each installment
+- Sale appears in customer's account statement (via `vw_EstadoCuenta` view)
+
+## Development workflow
+
+### Hot reload
+
+During development, use hot reload for rapid iteration:
+
+```bash
+dotnet watch run
+```
+
+This will automatically rebuild and restart the application when you modify `.cs` or `.cshtml` files.
+
+### CSS changes
+
+When modifying Tailwind styles in your views, the CSS rebuilds automatically on next build. To manually rebuild:
+
+```bash
+npm run css:build
+```
+
+### Database changes
+
+If you modify the database schema:
+
+1. Update the SQL Server database directly
+2. Re-scaffold the models to sync with code:
+
+```bash
+dotnet ef dbcontext scaffold "Data Source=.\;Database=TechCore;Trusted_Connection=True;TrustServerCertificate=True;" Microsoft.EntityFrameworkCore.SqlServer -o Models -c TechCoreContext --context-dir Datos --force
+```
+
+## Troubleshooting
+
+### Connection errors
+
+If you see database connection errors:
+
+1. Verify SQL Server is running
+2. Check connection string in `appsettings.json`
+3. Ensure Windows Authentication is enabled (or use SQL Auth with credentials)
+4. Test connection using SQL Server Management Studio
+
+### CSS not loading
+
+If styles aren't appearing:
+
+1. Run `npm install` to ensure Tailwind is installed
+2. Manually build CSS: `npm run css:build`
+3. Check that `wwwroot/css/styles.css` was generated
+4. Clear browser cache
+
+### Port conflicts
+
+If the default port is in use, modify `Properties/launchSettings.json`:
+
+```json
+"applicationUrl": "https://localhost:5002;http://localhost:5003"
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="System requirements" icon="server" href="/system-requirements">
+    Review detailed hardware and software requirements for production deployment
+  </Card>
+  <Card title="Database entities" icon="database" href="/database/entities">
+    Explore the data models and Entity Framework context
+  </Card>
+  <Card title="Core modules" icon="grid" href="/modules/customers">
+    Learn about customers, suppliers, products, and inventory
+  </Card>
+  <Card title="Development setup" icon="code" href="/development/setup">
+    Set up your development environment
+  </Card>
+</CardGroup>

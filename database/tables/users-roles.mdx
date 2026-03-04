@@ -1,0 +1,199 @@
+---
+title: "Users and Roles Tables"
+description: "Database schema documentation for users and roles tables, including authentication and authorization management"
+---
+
+## Overview
+
+The users and roles tables manage user authentication, authorization, and role-based access control in TechCore Mini ERP. The `rol` table defines available roles, while the `users` table stores user account information with foreign key references to roles.
+
+## Rol Table
+
+The `rol` table stores role definitions for the role-based access control system.
+
+### SQL Schema
+
+```sql
+CREATE TABLE rol(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    nombreRol VARCHAR(100) NOT NULL,
+    habilitado BIT DEFAULT 1
+)
+GO
+
+CREATE INDEX IDX_rol_habilitado ON rol(habilitado)
+GO
+```
+
+### Columns
+
+<ParamField path="id" type="INT">
+  Primary key with auto-increment. Uniquely identifies each role in the system.
+</ParamField>
+
+<ParamField path="nombreRol" type="VARCHAR(100)">
+  Role name (e.g., "Administrator", "Sales Manager", "Cashier"). This field is required and defines the role's identity.
+</ParamField>
+
+<ParamField path="habilitado" type="BIT">
+  Indicates if the role is enabled/active. Defaults to 1 (true). When set to 0, the role is disabled but not deleted from the database.
+</ParamField>
+
+### Indexes
+
+- **IDX_rol_habilitado**: Index on `habilitado` column for efficient filtering of active roles
+
+### C# Model
+
+```csharp
+public partial class Rol
+{
+    public int Id { get; set; }
+
+    public string NombreRol { get; set; } = null!;
+
+    public bool? Habilitado { get; set; }
+
+    public virtual ICollection<User> Users { get; set; } = new List<User>();
+}
+```
+
+### Relationships
+
+- **One-to-Many with users**: One role can be assigned to multiple users
+
+---
+
+## Users Table
+
+The `users` table stores user account information including credentials, contact details, and role assignments.
+
+### SQL Schema
+
+```sql
+CREATE TABLE users(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    code VARCHAR(10) NOT NULL,
+    nombre VARCHAR(200) NOT NULL,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    pwd VARCHAR(MAX) NOT NULL,
+    phone VARCHAR(15),
+    idrol INT NOT NULL,
+    email VARCHAR(200),
+    created_date DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (idrol) REFERENCES rol(id)
+)
+GO
+
+CREATE UNIQUE INDEX IDX_users_code ON users(code)
+GO
+CREATE INDEX IDX_users_idrol ON users(idrol)
+GO
+CREATE INDEX IDX_users_email ON users(email)
+GO
+```
+
+### Columns
+
+<ParamField path="id" type="INT">
+  Primary key with auto-increment. Uniquely identifies each user in the system.
+</ParamField>
+
+<ParamField path="code" type="VARCHAR(10)">
+  Unique user code/identifier. This is a business identifier separate from the auto-generated ID. Must be unique (enforced by index).
+</ParamField>
+
+<ParamField path="nombre" type="VARCHAR(200)">
+  Full name of the user. Required field.
+</ParamField>
+
+<ParamField path="username" type="VARCHAR(100)">
+  Login username. Must be unique across all users (enforced by UNIQUE constraint).
+</ParamField>
+
+<ParamField path="pwd" type="VARCHAR(MAX)">
+  Encrypted/hashed password. Stored as VARCHAR(MAX) to accommodate various hashing algorithms and future-proofing.
+</ParamField>
+
+<ParamField path="phone" type="VARCHAR(15)">
+  Contact phone number. Optional field.
+</ParamField>
+
+<ParamField path="idrol" type="INT">
+  Foreign key reference to the `rol` table. Defines the user's role and permissions. Required field.
+</ParamField>
+
+<ParamField path="email" type="VARCHAR(200)">
+  User's email address. Optional but indexed for quick lookups.
+</ParamField>
+
+<ParamField path="created_date" type="DATETIME">
+  Timestamp when the user account was created. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `id`
+- **Unique Constraint**: `username` must be unique
+- **Foreign Key**: `idrol` references `rol(id)`
+
+### Indexes
+
+- **IDX_users_code**: Unique index on `code` for fast lookups by user code
+- **IDX_users_idrol**: Index on `idrol` for efficient role-based queries
+- **IDX_users_email**: Index on `email` for quick email-based searches
+
+### C# Model
+
+```csharp
+public partial class User
+{
+    public int Id { get; set; }
+
+    public string Code { get; set; } = null!;
+
+    public string Nombre { get; set; } = null!;
+
+    public string Username { get; set; } = null!;
+
+    public string Pwd { get; set; } = null!;
+
+    public string? Phone { get; set; }
+
+    public int Idrol { get; set; }
+
+    public string? Email { get; set; }
+
+    public DateTime? CreatedDate { get; set; }
+
+    public virtual ICollection<Compra> Compras { get; set; } = new List<Compra>();
+
+    public virtual Rol IdrolNavigation { get; set; } = null!;
+
+    public virtual ICollection<Venta> Venta { get; set; } = new List<Venta>();
+}
+```
+
+### Relationships
+
+- **Many-to-One with rol**: Each user belongs to one role (via `idrol`)
+- **One-to-Many with ventas**: Users can process multiple sales (as vendor/seller)
+- **One-to-Many with compras**: Users can process multiple purchases
+
+## Entity Relationship
+
+```
+rol (1) ----< (*) users
+                   |
+                   +----< (*) ventas (as codvend)
+                   |
+                   +----< (*) compras (as codusu)
+```
+
+## Usage Notes
+
+- The `users.code` field provides a business-friendly identifier separate from the technical `id`
+- Passwords should always be hashed before storage; never store plain text passwords
+- The `habilitado` field in `rol` allows soft-deletion of roles without breaking foreign key relationships
+- Users are referenced in both sales (ventas) and purchases (compras) to track who processed each transaction
+- The unique index on `username` ensures no duplicate login credentials

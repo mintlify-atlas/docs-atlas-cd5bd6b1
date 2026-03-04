@@ -1,0 +1,185 @@
+---
+title: Suppliers
+description: Manage supplier information, contact details, and purchase order history in TechCore Mini ERP
+---
+
+The suppliers module helps you maintain relationships with vendors and suppliers who provide products and services to your business. Track supplier contact information, purchase history, and manage supplier accounts effectively.
+
+## Supplier entity
+
+Suppliers are stored in the `Proveedore` model with the following fields:
+
+<ResponseField name="Codprovee" type="string" required>
+  Unique supplier code identifier (primary key)
+</ResponseField>
+
+<ResponseField name="Nombre" type="string" required>
+  Full name or business name of the supplier
+</ResponseField>
+
+<ResponseField name="Telefono" type="string">
+  Phone number for supplier contact (max 15 characters)
+</ResponseField>
+
+<ResponseField name="Email" type="string">
+  Email address for supplier communications (max 200 characters)
+</ResponseField>
+
+<ResponseField name="Direccion" type="string">
+  Physical address or business location (max 300 characters)
+</ResponseField>
+
+<ResponseField name="Estado" type="int">
+  Supplier status flag (1 = active, 0 = inactive). Defaults to 1
+</ResponseField>
+
+<ResponseField name="CreatedDate" type="DateTime">
+  Timestamp when the supplier record was created. Automatically set to current date/time
+</ResponseField>
+
+## Database schema
+
+```sql
+CREATE TABLE proveedores(
+    codprovee VARCHAR(50) PRIMARY KEY,
+    nombre VARCHAR(200) NOT NULL,
+    telefono VARCHAR(15),
+    email VARCHAR(200),
+    direccion VARCHAR(300),
+    estado INT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE()
+)
+```
+
+### Indexes
+
+The suppliers table includes the following indexes for optimized query performance:
+
+- `IDX_proveedores_nombre` - Index on supplier name for fast name-based searches
+- `IDX_proveedores_estado` - Index on status for filtering active/inactive suppliers
+
+## Relationships
+
+Suppliers have a one-to-many relationship with purchase orders:
+
+- **Compras (Purchases)**: A supplier can have multiple purchase orders. The relationship is established through the `codprov` foreign key in the `compras` table.
+
+## User workflows
+
+### Adding a new supplier
+
+<Steps>
+  <Step title="Create supplier code">
+    Assign a unique identifier in the `Codprovee` field. This code will be used to reference the supplier across all purchase transactions.
+  </Step>
+  
+  <Step title="Enter supplier name">
+    Provide the supplier's business name or full name in the `Nombre` field. This is a required field.
+  </Step>
+  
+  <Step title="Add contact information">
+    Include the supplier's phone number, email address, and physical address to facilitate communication and order processing.
+  </Step>
+  
+  <Step title="Save supplier record">
+    Save the supplier. The system automatically sets the creation timestamp and activates the supplier account by default.
+  </Step>
+</Steps>
+
+### Managing supplier status
+
+The `Estado` field controls supplier availability in the system:
+
+<Tip>
+  Deactivate suppliers rather than deleting them to preserve historical purchase data and maintain audit trails.
+</Tip>
+
+- **Active suppliers** (`Estado = 1`) appear in dropdown lists when creating purchase orders
+- **Inactive suppliers** (`Estado = 0`) are excluded from active supplier lists but their purchase history remains available
+
+### Viewing supplier purchase history
+
+Each supplier record maintains a collection of all associated purchase orders through the `Compras` navigation property. This enables you to:
+
+- Review all purchases made from a specific supplier
+- Analyze supplier pricing trends over time
+- Track delivery performance and reliability
+- Calculate total spending per supplier
+- Identify preferred suppliers based on purchase volume
+
+### Searching for suppliers
+
+The database indexes support efficient searching:
+
+- **Supplier name**: Search by full or partial business name
+- **Status filter**: Display only active or inactive suppliers
+- **Supplier code**: Direct lookup using the unique identifier
+
+<Warning>
+  The supplier code (`Codprovee`) is immutable once created because it serves as the primary key referenced by purchase orders.
+</Warning>
+
+## Supplier evaluation
+
+### Key metrics to track
+
+Use the supplier purchase history to evaluate vendor performance:
+
+<CardGroup cols={2}>
+  <Card title="Purchase volume" icon="chart-line">
+    Total value and quantity of purchases from each supplier
+  </Card>
+  
+  <Card title="Purchase frequency" icon="calendar">
+    How often you order from specific suppliers
+  </Card>
+  
+  <Card title="Product range" icon="boxes">
+    Variety of products supplied by each vendor
+  </Card>
+  
+  <Card title="Historical data" icon="clock-rotate-left">
+    Complete purchase history with dates and amounts
+  </Card>
+</CardGroup>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Supplier code conventions">
+    Use a consistent naming system for supplier codes:
+    - Company initials: `ACME` for ACME Corporation
+    - Sequential numbers: `SUP001`, `SUP002`
+    - Category prefix: `TECH-001` for technology suppliers, `OFF-001` for office supplies
+  </Accordion>
+  
+  <Accordion title="Contact information accuracy">
+    - Verify all contact details when onboarding new suppliers
+    - Request multiple contact persons for critical suppliers
+    - Keep emergency contact numbers for essential vendors
+    - Update contact information promptly when suppliers notify changes
+  </Accordion>
+  
+  <Accordion title="Supplier relationship management">
+    - Document payment terms and conditions for each supplier
+    - Maintain notes about supplier specialties and limitations
+    - Track supplier lead times for better inventory planning
+    - Review inactive suppliers periodically for potential reactivation
+  </Accordion>
+  
+  <Accordion title="Data maintenance">
+    - Consolidate duplicate supplier records
+    - Archive historical supplier data according to retention policies
+    - Perform regular audits of supplier information accuracy
+    - Document reasons for supplier deactivation
+  </Accordion>
+</AccordionGroup>
+
+## Integration with purchasing
+
+Suppliers are integral to the purchasing workflow:
+
+1. **Purchase order creation**: Select active suppliers when creating new purchase orders
+2. **Inventory replenishment**: Reference supplier purchase history to identify reliable sources
+3. **Cost tracking**: Monitor purchase costs across different suppliers for the same products
+4. **Vendor comparison**: Analyze supplier performance to optimize procurement decisions

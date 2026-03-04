@@ -1,0 +1,212 @@
+---
+title: Sales Management
+description: Learn how to manage sales transactions with CONTADO and CREDITO payment types in TechCore Mini ERP
+---
+
+## Overview
+
+The sales system in TechCore manages customer transactions with two payment methods: **CONTADO** (cash/immediate payment) and **CREDITO** (credit/installment payment). Sales automatically update inventory and can include payment plans with interest calculations.
+
+## Sales Entity
+
+The `Venta` entity represents a complete sales transaction.
+
+### Entity Fields
+
+<ParamField path="Norden" type="string" required>
+  Unique sale order identifier (primary key)
+</ParamField>
+
+<ParamField path="OrdenN" type="int" required>
+  Sequential order number for display purposes
+</ParamField>
+
+<ParamField path="Codclien" type="string" required>
+  Customer code (foreign key to `clientes` table)
+</ParamField>
+
+<ParamField path="Codvend" type="int" required>
+  Salesperson/user ID (foreign key to `users` table)
+</ParamField>
+
+<ParamField path="Fecha" type="DateTime">
+  Sale date and time (defaults to current datetime)
+</ParamField>
+
+<ParamField path="Subtotal" type="decimal" required>
+  Sum of all line items before tax
+</ParamField>
+
+<ParamField path="Iva" type="decimal" required>
+  Tax amount (IVA - Value Added Tax)
+</ParamField>
+
+<ParamField path="Total" type="decimal" required>
+  Final sale total (Subtotal + IVA)
+</ParamField>
+
+<ParamField path="TipoPago" type="string" default="CONTADO">
+  Payment type: `CONTADO` (immediate payment) or `CREDITO` (installment payment)
+</ParamField>
+
+<ParamField path="Meses" type="int">
+  Number of months for credit sales (only applicable when TipoPago = 'CREDITO')
+</ParamField>
+
+<ParamField path="TasaInteres" type="decimal" default="0">
+  Interest rate percentage applied to credit sales (e.g., 5.00 for 5%)
+</ParamField>
+
+<ParamField path="Saldo" type="decimal" required>
+  Outstanding balance. Equals Total for new sales, decreases with payments
+</ParamField>
+
+<ParamField path="Nula" type="bool" default="false">
+  Indicates if the sale is voided/annulled (0 = valid, 1 = voided)
+</ParamField>
+
+<ParamField path="Estado" type="bool" default="true">
+  Active status of the sale record
+</ParamField>
+
+### Relationships
+
+- **VentasDetalles**: Collection of line items for this sale
+- **PlanPagos**: Collection of installment plans (for credit sales)
+- **AbonosVenta**: Collection of payments made against this sale
+- **CodclienNavigation**: Customer information
+- **CodvendNavigation**: Salesperson/user information
+
+## Payment Types
+
+### CONTADO (Cash Sale)
+
+Immediate payment transactions where the full amount is paid upfront.
+
+**Characteristics:**
+- `TipoPago` = "CONTADO"
+- `Meses` is NULL
+- `TasaInteres` = 0
+- `Saldo` should be 0 after initial payment
+- No payment plan is generated
+
+### CREDITO (Credit Sale)
+
+Installment-based transactions with optional interest charges.
+
+**Characteristics:**
+- `TipoPago` = "CREDITO"
+- `Meses` specifies the number of monthly installments
+- `TasaInteres` defines the interest rate applied
+- `Saldo` starts at Total amount and decreases with each payment
+- Automatically generates a payment plan (`PlanPagos`)
+
+## Sales Details
+
+Each sale contains one or more line items stored in the `VentasDetalle` entity.
+
+### Line Item Fields
+
+<ParamField path="Id" type="int" required>
+  Auto-generated line item identifier
+</ParamField>
+
+<ParamField path="Norden" type="string" required>
+  Sale order reference (foreign key to `ventas`)
+</ParamField>
+
+<ParamField path="Codprod" type="string" required>
+  Product code (foreign key to `productos`)
+</ParamField>
+
+<ParamField path="Cantidad" type="int" required>
+  Quantity of product sold
+</ParamField>
+
+<ParamField path="Pventa" type="decimal" required>
+  Unit sale price for this product
+</ParamField>
+
+<ParamField path="Subtotal" type="decimal" required>
+  Line total (Cantidad × Pventa)
+</ParamField>
+
+## Creating a Sale
+
+<Steps>
+  <Step title="Create the Sale Header">
+    Create a new `Venta` record with customer, salesperson, and payment details. Set `TipoPago` to either "CONTADO" or "CREDITO".
+    
+    For credit sales, specify `Meses` (number of months) and `TasaInteres` (interest rate).
+  </Step>
+  
+  <Step title="Add Line Items">
+    Create `VentasDetalle` records for each product being sold. The system will automatically reduce inventory when line items are added (via the `TR_DisminuirStock` trigger).
+    
+    Stock is only reduced for non-voided sales (`Nula = 0`).
+  </Step>
+  
+  <Step title="Calculate Totals">
+    Sum all line item subtotals to get the sale `Subtotal`, calculate `Iva` (tax), and compute the final `Total`.
+    
+    Initial `Saldo` equals `Total` for credit sales, or 0 for cash sales after payment.
+  </Step>
+  
+  <Step title="Generate Payment Plan (Credit Only)">
+    For credit sales, the system creates installment records in the `PlanPagos` table based on:
+    - Number of months (`Meses`)
+    - Interest rate (`TasaInteres`)
+    - Total amount with interest
+    
+    Each installment includes a due date (`FechaVencimiento`) and payment amount (`MontoCuota`).
+  </Step>
+</Steps>
+
+## Inventory Management
+
+The `TR_DisminuirStock` trigger automatically reduces product stock when sale details are inserted:
+
+```sql
+UPDATE productos
+SET stock = stock - cantidad
+WHERE sale is not voided (nula = 0)
+```
+
+This ensures inventory is only affected by valid sales.
+
+## Voiding Sales
+
+Set `Nula = 1` to void a sale. Voided sales:
+- Are excluded from financial reports
+- Do not affect inventory (trigger checks this flag)
+- Remain in the database for audit purposes
+- Are filtered out in views like `vw_CuotasVencidas`
+
+## Database Schema
+
+```sql
+CREATE TABLE ventas(
+    norden VARCHAR(50) PRIMARY KEY,
+    ordenN INT NOT NULL,
+    codclien VARCHAR(50) NOT NULL,
+    codvend INT NOT NULL,
+    fecha DATETIME DEFAULT GETDATE(),
+    subtotal DECIMAL(18,2) NOT NULL,
+    iva DECIMAL(18,2) NOT NULL,
+    total DECIMAL(18,2) NOT NULL,
+    tipoPago VARCHAR(20) DEFAULT 'CONTADO',
+    meses INT NULL,
+    tasaInteres DECIMAL(5,2) DEFAULT 0,
+    saldo DECIMAL(18,2) NOT NULL,
+    nula BIT DEFAULT 0,
+    estado BIT DEFAULT 1,
+    FOREIGN KEY (codclien) REFERENCES clientes(codclien),
+    FOREIGN KEY (codvend) REFERENCES users(id)
+)
+```
+
+## Related Documentation
+
+- [Payment Plans](/transactions/payment-plans) - Managing installment schedules
+- [Payments](/transactions/payments) - Recording customer payments
+- [Purchases](/transactions/purchases) - Managing inventory purchases

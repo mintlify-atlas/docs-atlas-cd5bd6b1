@@ -1,0 +1,308 @@
+---
+title: Running Locally
+description: Build and run TechCore Mini ERP on your local development machine
+---
+
+This guide covers building and running TechCore Mini ERP on your local development environment.
+
+## Prerequisites
+
+Before running the application, ensure you have:
+
+- Completed [Development Setup](/development/setup)
+- Configured your [database connection](/development/configuration)
+- Applied database migrations
+
+## Building the Application
+
+TechCore requires building both the .NET application and Tailwind CSS assets.
+
+### Building CSS Assets
+
+The project uses Tailwind CSS 4.2.1 with DaisyUI 5.5.19 for styling. CSS is built automatically during the .NET build process via a pre-build target.
+
+To manually build CSS:
+
+```bash
+npm run css:build
+```
+
+This runs:
+```bash
+npx tailwindcss -i ./wwwroot/css/site.css -o ./wwwroot/css/styles.css --minify
+```
+
+### Building the .NET Application
+
+<Steps>
+  <Step title="Navigate to project directory">
+    ```bash
+    cd TechCore
+    ```
+  </Step>
+
+  <Step title="Build the project">
+    ```bash
+    dotnet build
+    ```
+    
+    This will:
+    - Restore NuGet packages if needed
+    - Run the Tailwind CSS build (via the pre-build target)
+    - Compile the application
+    - Output binaries to `bin/Debug/net10.0/`
+  </Step>
+</Steps>
+
+<Note>
+  The build process automatically triggers `npm run css:build` before compilation, as defined in the `Tailwind` target in `TechCore.csproj`.
+</Note>
+
+## Running Database Migrations
+
+Before running the application for the first time, create the database:
+
+<Steps>
+  <Step title="Ensure SQL Server is running">
+    Verify that your SQL Server instance is running and accessible.
+  </Step>
+
+  <Step title="Apply migrations">
+    ```bash
+    dotnet ef database update
+    ```
+    
+    This creates the TechCore database and all required tables based on your Entity Framework Core 10.0.3 migrations.
+  </Step>
+
+  <Step title="Verify database creation">
+    Connect to your SQL Server and confirm the TechCore database exists.
+  </Step>
+</Steps>
+
+### Creating New Migrations
+
+When you modify entity models, create a new migration:
+
+```bash
+dotnet ef migrations add MigrationName
+```
+
+Then apply it:
+```bash
+dotnet ef database update
+```
+
+## Running the Application
+
+### Using .NET CLI
+
+<Steps>
+  <Step title="Navigate to project directory">
+    ```bash
+    cd TechCore
+    ```
+  </Step>
+
+  <Step title="Run the application">
+    ```bash
+    dotnet run
+    ```
+    
+    The application will:
+    - Build the project (including CSS assets)
+    - Start the Kestrel web server
+    - Display the URLs where the app is listening
+  </Step>
+
+  <Step title="Check the output">
+    You should see output similar to:
+    ```
+    info: Microsoft.Hosting.Lifetime[14]
+          Now listening on: https://localhost:5001
+    info: Microsoft.Hosting.Lifetime[14]
+          Now listening on: http://localhost:5000
+    ```
+  </Step>
+</Steps>
+
+### Using Visual Studio
+
+<Steps>
+  <Step title="Open solution">
+    Open `TechCore.sln` in Visual Studio 2022.
+  </Step>
+
+  <Step title="Set startup project">
+    Ensure TechCore is set as the startup project (right-click project > Set as Startup Project).
+  </Step>
+
+  <Step title="Run">
+    Press F5 to run with debugging, or Ctrl+F5 to run without debugging.
+    
+    The application will build and launch in your default browser.
+  </Step>
+</Steps>
+
+### Using Visual Studio Code
+
+<Steps>
+  <Step title="Open project folder">
+    Open the TechCore folder in VS Code.
+  </Step>
+
+  <Step title="Install C# Dev Kit">
+    Ensure you have the C# Dev Kit extension installed.
+  </Step>
+
+  <Step title="Run">
+    Press F5 or use the Run menu > Start Debugging.
+    
+    VS Code will use the launch configuration from `.vscode/launch.json` if present.
+  </Step>
+</Steps>
+
+## Accessing the Application
+
+Once running, access TechCore at:
+
+- HTTPS: `https://localhost:5001`
+- HTTP: `http://localhost:5000`
+
+<Note>
+  The default route is configured as `{controller=Home}/{action=Index}/{id?}`, so navigating to the root URL will load the Home controller's Index action.
+</Note>
+
+### Development vs Production Mode
+
+The application behavior changes based on the environment:
+
+#### Development Mode
+
+```csharp Program.cs:22-27
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+```
+
+In Development:
+- Detailed error pages are shown
+- HSTS is disabled
+- `appsettings.Development.json` overrides are applied
+
+#### Production Mode
+
+In Production:
+- Errors are handled by the `/Home/Error` endpoint
+- HSTS (HTTP Strict Transport Security) is enabled with a 30-day max-age
+- Only `appsettings.json` is used
+
+## Hot Reload
+
+.NET 10.0 supports hot reload for rapid development:
+
+```bash
+dotnet watch run
+```
+
+This will:
+- Run the application
+- Watch for file changes
+- Automatically rebuild and refresh when you save changes
+
+<Warning>
+  CSS changes require a manual rebuild (`npm run css:build`) or restarting `dotnet watch` to take effect.
+</Warning>
+
+## Troubleshooting
+
+### Port Already in Use
+
+If ports 5000 or 5001 are already in use, you can specify different ports:
+
+```bash
+dotnet run --urls "https://localhost:7001;http://localhost:7000"
+```
+
+### CSS Not Loading
+
+If styles are not appearing:
+
+1. Verify npm packages are installed:
+   ```bash
+   npm install
+   ```
+
+2. Manually build CSS:
+   ```bash
+   npm run css:build
+   ```
+
+3. Check that `wwwroot/css/styles.css` was generated
+
+### Database Connection Failed
+
+If you see database connection errors:
+
+1. Verify SQL Server is running
+2. Check your connection string in `appsettings.json` or user secrets
+3. Ensure the database exists:
+   ```bash
+   dotnet ef database update
+   ```
+
+### Entity Framework Tools Not Found
+
+If `dotnet ef` commands fail:
+
+```bash
+dotnet tool install --global dotnet-ef
+```
+
+Or update to the latest version:
+```bash
+dotnet tool update --global dotnet-ef
+```
+
+## Development Workflow
+
+Recommended workflow for local development:
+
+<Steps>
+  <Step title="Create feature branch">
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+  </Step>
+
+  <Step title="Run with hot reload">
+    ```bash
+    dotnet watch run
+    ```
+  </Step>
+
+  <Step title="Make changes and test">
+    Edit code, save, and test the automatically reloaded application.
+  </Step>
+
+  <Step title="Commit changes">
+    ```bash
+    git add .
+    git commit -m "Descriptive commit message"
+    ```
+  </Step>
+
+  <Step title="Push to remote">
+    ```bash
+    git push -u origin feature/your-feature-name
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+- Review the [Architecture](/development/architecture) documentation
+- Explore the [Data Access Layer](/development/data-access)
+- Learn about [Entity Models](/development/models)

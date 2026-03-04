@@ -1,0 +1,497 @@
+---
+title: Entity Models
+description: Comprehensive guide to TechCore's entity models, navigation properties, relationships, and partial class structure
+---
+
+## Overview
+
+TechCore's entity models are located in `~/workspace/source/TechCore/Models/` and represent the database schema using Entity Framework Core conventions. All models are **partial classes**, allowing for extension and customization.
+
+## Model Categories
+
+### Core Business Entities
+- **Cliente** - Customer information
+- **Producto** - Product catalog
+- **Categorium** - Product categories
+- **Proveedore** - Supplier information
+
+### Transaction Entities
+- **Venta** - Sales orders
+- **VentasDetalle** - Sale line items
+- **Compra** - Purchase orders
+- **ComprasDetalle** - Purchase line items
+
+### Financial Entities
+- **AbonosVenta** - Sale payments
+- **PlanPago** - Payment installment plans
+
+### System Entities
+- **User** - Application users
+- **Rol** - User roles
+
+### View Entities
+- **VwCuotasPorVencer** - Upcoming installments
+- **VwCuotasVencida** - Overdue installments
+- **VwEstadoCuentum** - Account balances
+
+## Core Entities
+
+### Cliente (Customer)
+
+Location: `~/workspace/source/TechCore/Models/Cliente.cs`
+
+```csharp
+public partial class Cliente
+{
+    public string Codclien { get; set; } = null!;      // Primary key
+    public string Nombre { get; set; } = null!;
+    public string? Telefono { get; set; }
+    public string? Email { get; set; }
+    public string? Direccion { get; set; }
+    public bool? Estado { get; set; }                  // Active/Inactive
+    public DateTime? CreatedDate { get; set; }
+
+    // Navigation: One cliente has many ventas
+    public virtual ICollection<Venta> Venta { get; set; } = new List<Venta>();
+}
+```
+
+**Key Features:**
+- String-based primary key (`Codclien`)
+- Soft delete with `Estado` flag
+- One-to-many relationship with sales
+- Created date tracking
+
+### Producto (Product)
+
+Location: `~/workspace/source/TechCore/Models/Producto.cs`
+
+```csharp
+public partial class Producto
+{
+    public string Codprod { get; set; } = null!;       // Primary key
+    public int? CodCategoria { get; set; }             // Foreign key
+    public string? Descripcion { get; set; }
+    public decimal PrecioCompra { get; set; }
+    public decimal PrecioVenta { get; set; }
+    public int? Stock { get; set; }
+    public int? StockMinimo { get; set; }
+    public bool? Estado { get; set; }
+    public DateTime? CreatedDate { get; set; }
+
+    // Navigation: Many-to-one with Categoria
+    public virtual Categorium? CodCategoriaNavigation { get; set; }
+
+    // Navigation: One-to-many with details
+    public virtual ICollection<ComprasDetalle> ComprasDetalles { get; set; } = new List<ComprasDetalle>();
+    public virtual ICollection<VentasDetalle> VentasDetalles { get; set; } = new List<VentasDetalle>();
+}
+```
+
+**Key Features:**
+- String-based product code as primary key
+- Purchase and sale prices
+- Stock management with minimum threshold
+- Belongs to a category
+- Used in both sales and purchases
+
+### Categorium (Category)
+
+Location: `~/workspace/source/TechCore/Models/Categorium.cs`
+
+```csharp
+public partial class Categorium
+{
+    public int CodCategoria { get; set; }              // Primary key (identity)
+    public string Codigo { get; set; } = null!;        // Unique code
+    public string Nombre { get; set; } = null!;
+    public string? Descripcion { get; set; }
+    public bool? Estado { get; set; }
+    public DateTime? CreatedDate { get; set; }
+
+    // Navigation: One category has many products
+    public virtual ICollection<Producto> Productos { get; set; } = new List<Producto>();
+}
+```
+
+**Key Features:**
+- Integer identity primary key
+- Unique string code for business reference
+- One-to-many relationship with products
+
+## Transaction Entities
+
+### Venta (Sale)
+
+Location: `~/workspace/source/TechCore/Models/Venta.cs`
+
+```csharp
+public partial class Venta
+{
+    public string Norden { get; set; } = null!;        // Primary key (order number)
+    public int OrdenN { get; set; }                    // Sequential number
+    public string Codclien { get; set; } = null!;      // Foreign key to Cliente
+    public int Codvend { get; set; }                   // Foreign key to User (seller)
+    public DateTime? Fecha { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal Iva { get; set; }
+    public decimal Total { get; set; }
+    public string? TipoPago { get; set; }              // "CONTADO" or "CREDITO"
+    public int? Meses { get; set; }                    // Installment months
+    public decimal? TasaInteres { get; set; }          // Interest rate
+    public decimal Saldo { get; set; }                 // Remaining balance
+    public bool? Nula { get; set; }                    // Voided flag
+    public bool? Estado { get; set; }                  // Active flag
+
+    // Navigation: Many-to-one relationships
+    public virtual Cliente CodclienNavigation { get; set; } = null!;
+    public virtual User CodvendNavigation { get; set; } = null!;
+
+    // Navigation: One-to-many relationships
+    public virtual ICollection<AbonosVenta> AbonosVenta { get; set; } = new List<AbonosVenta>();
+    public virtual ICollection<PlanPago> PlanPagos { get; set; } = new List<PlanPago>();
+    public virtual ICollection<VentasDetalle> VentasDetalles { get; set; } = new List<VentasDetalle>();
+}
+```
+
+**Key Features:**
+- Complex master entity with multiple relationships
+- Supports both cash and credit sales
+- Tracks installment plans with interest
+- Multiple related collections:
+  - Sale details (line items)
+  - Payment plans
+  - Payments received
+- Can be voided (`Nula` flag)
+
+### VentasDetalle (Sale Line Item)
+
+Location: `~/workspace/source/TechCore/Models/VentasDetalle.cs`
+
+```csharp
+public partial class VentasDetalle
+{
+    public int Id { get; set; }                        // Primary key
+    public string Norden { get; set; }                 // Foreign key to Venta
+    public string Codprod { get; set; }                // Foreign key to Producto
+    public int Cantidad { get; set; }
+    public decimal Pventa { get; set; }                // Sale price
+    public decimal Subtotal { get; set; }              // Cantidad * Pventa
+
+    // Navigation properties
+    public virtual Producto CodprodNavigation { get; set; } = null!;
+    public virtual Venta NordenNavigation { get; set; }
+}
+```
+
+**Database Trigger:**
+This entity has a trigger `TR_DisminuirStock` that automatically decreases product stock when a sale detail is inserted.
+
+### Compra (Purchase Order)
+
+Location: `~/workspace/source/TechCore/Models/Compra.cs`
+
+```csharp
+public partial class Compra
+{
+    public string Norden { get; set; } = null!;        // Primary key
+    public int OrdenN { get; set; }
+    public string Codprov { get; set; } = null!;       // Foreign key to Proveedore
+    public int Codusu { get; set; }                    // Foreign key to User
+    public DateTime? Fecha { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal Iva { get; set; }
+    public decimal Total { get; set; }
+    public int? Estado { get; set; }
+
+    // Navigation properties
+    public virtual Proveedore CodprovNavigation { get; set; } = null!;
+    public virtual User CodusuNavigation { get; set; } = null!;
+    public virtual ICollection<ComprasDetalle> ComprasDetalles { get; set; } = new List<ComprasDetalle>();
+}
+```
+
+**Key Features:**
+- Master-detail structure similar to sales
+- Links to supplier (`Proveedore`)
+- Links to user who created the purchase
+- Integer estado for status tracking
+
+## Financial Entities
+
+### AbonosVenta (Sale Payment)
+
+Location: `~/workspace/source/TechCore/Models/AbonosVenta.cs`
+
+Tracks individual payments made against credit sales:
+
+```csharp
+public partial class AbonosVenta
+{
+    public int Id { get; set; }
+    public string Norden { get; set; }                 // Foreign key to Venta
+    public int NumeroCuota { get; set; }               // Installment number
+    public decimal Monto { get; set; }                 // Payment amount
+    public DateTime? Fecha { get; set; }
+
+    public virtual Venta NordenNavigation { get; set; }
+}
+```
+
+**Database Trigger:**
+Has trigger `TR_ActualizarSaldo` that automatically updates the sale's balance when a payment is recorded.
+
+### PlanPago (Payment Plan)
+
+Location: `~/workspace/source/TechCore/Models/PlanPago.cs`
+
+Defines the installment schedule for credit sales:
+
+```csharp
+public partial class PlanPago
+{
+    public int Id { get; set; }
+    public string Norden { get; set; }                 // Foreign key to Venta
+    public int NumeroCuota { get; set; }               // Installment number
+    public DateOnly FechaVencimiento { get; set; }     // Due date
+    public decimal MontoCuota { get; set; }            // Installment amount
+    public bool? Pagada { get; set; }                  // Paid flag
+
+    public virtual Venta NordenNavigation { get; set; }
+}
+```
+
+**Key Features:**
+- Defines when each installment is due
+- Tracks whether installment is paid
+- Used by payment monitoring views
+
+## System Entities
+
+### User
+
+Location: `~/workspace/source/TechCore/Models/User.cs`
+
+```csharp
+public partial class User
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = null!;          // Unique employee code
+    public string Nombre { get; set; } = null!;
+    public string Username { get; set; } = null!;      // Unique username
+    public string Pwd { get; set; } = null!;           // Password
+    public string? Phone { get; set; }
+    public int Idrol { get; set; }                     // Foreign key to Rol
+    public string? Email { get; set; }
+    public DateTime? CreatedDate { get; set; }
+
+    // Navigation: Many-to-one with Rol
+    public virtual Rol IdrolNavigation { get; set; } = null!;
+
+    // Navigation: One-to-many with transactions
+    public virtual ICollection<Compra> Compras { get; set; } = new List<Compra>();
+    public virtual ICollection<Venta> Venta { get; set; } = new List<Venta>();
+}
+```
+
+**Key Features:**
+- Users create both sales and purchases
+- Must belong to a role
+- Unique code and username
+
+### Rol (Role)
+
+Location: `~/workspace/source/TechCore/Models/Rol.cs`
+
+```csharp
+public partial class Rol
+{
+    public int Id { get; set; }
+    public string NombreRol { get; set; }              // Role name
+    public bool? Habilitado { get; set; }              // Enabled flag
+
+    public virtual ICollection<User> Users { get; set; } = new List<User>();
+}
+```
+
+## Navigation Property Patterns
+
+### Naming Conventions
+
+Entity Framework Core navigation properties follow these patterns:
+
+#### Foreign Key Navigation (Many-to-One)
+
+```csharp
+// Pattern: {ForeignKeyProperty}Navigation
+public virtual Cliente CodclienNavigation { get; set; }
+public virtual Categorium CodCategoriaNavigation { get; set; }
+public virtual User IdrolNavigation { get; set; }
+```
+
+#### Collection Navigation (One-to-Many)
+
+```csharp
+// Pattern: Plural entity name
+public virtual ICollection<Venta> Venta { get; set; }            // Note: not pluralized in Spanish
+public virtual ICollection<Producto> Productos { get; set; }
+public virtual ICollection<VentasDetalle> VentasDetalles { get; set; }
+```
+
+### Initialization Pattern
+
+All collection navigations are initialized to prevent null reference exceptions:
+
+```csharp
+public virtual ICollection<Producto> Productos { get; set; } = new List<Producto>();
+```
+
+## Partial Class Pattern
+
+All models use the `partial` keyword:
+
+```csharp
+public partial class Producto
+{
+    // Properties and navigations...
+}
+```
+
+**Benefits:**
+1. **Code generation** - EF Core scaffolding can regenerate models without losing customizations
+2. **Extensions** - Add computed properties, methods, or validation in separate files
+3. **Data annotations** - Add validation attributes in custom partial class files
+
+### Example Extension
+
+Create a separate file `Producto.Custom.cs`:
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+namespace TechCore.Models;
+
+public partial class Producto
+{
+    [Display(Name = "Margen de Ganancia")]
+    public decimal MargenGanancia => PrecioVenta - PrecioCompra;
+
+    public bool BajoStock => Stock <= StockMinimo;
+}
+```
+
+## Nullable Reference Types
+
+The project uses nullable reference types (`<Nullable>enable</Nullable>`):
+
+### Non-nullable (required)
+
+```csharp
+public string Nombre { get; set; } = null!;
+```
+
+The `= null!` suppresses the compiler warning while indicating the property will be set by EF Core.
+
+### Nullable (optional)
+
+```csharp
+public string? Email { get; set; }
+public int? Stock { get; set; }
+public DateTime? CreatedDate { get; set; }
+```
+
+## Common Property Patterns
+
+### Audit Fields
+
+```csharp
+public DateTime? CreatedDate { get; set; }    // Set via SQL default: getdate()
+```
+
+### Status Flags
+
+```csharp
+public bool? Estado { get; set; }             // Active/Inactive (soft delete)
+public bool? Nula { get; set; }               // Voided flag
+public bool? Pagada { get; set; }             // Paid flag
+```
+
+### Financial Fields
+
+```csharp
+public decimal PrecioCompra { get; set; }     // decimal(18, 2)
+public decimal PrecioVenta { get; set; }      // decimal(18, 2)
+public decimal Total { get; set; }            // decimal(18, 2)
+```
+
+### Order Tracking
+
+```csharp
+public string Norden { get; set; }            // String order number (PK)
+public int OrdenN { get; set; }               // Sequential integer
+```
+
+## Working with Models
+
+### Querying with Navigation Properties
+
+```csharp
+// Load product with category
+var producto = await _context.Productos
+    .Include(p => p.CodCategoriaNavigation)
+    .FirstOrDefaultAsync(p => p.Codprod == "PROD001");
+
+var categoriaNombre = producto.CodCategoriaNavigation?.Nombre;
+```
+
+### Loading Related Collections
+
+```csharp
+// Load sale with all related data
+var venta = await _context.Ventas
+    .Include(v => v.CodclienNavigation)      // Customer
+    .Include(v => v.CodvendNavigation)        // Seller
+    .Include(v => v.VentasDetalles)           // Line items
+        .ThenInclude(d => d.CodprodNavigation) // Products in line items
+    .Include(v => v.PlanPagos)                // Payment plan
+    .Include(v => v.AbonosVenta)              // Payments
+    .FirstOrDefaultAsync(v => v.Norden == "V-001");
+```
+
+### Creating Related Entities
+
+```csharp
+var venta = new Venta
+{
+    Norden = "V-002",
+    Codclien = "CLI-001",
+    Codvend = 1,
+    VentasDetalles = new List<VentasDetalle>
+    {
+        new VentasDetalle
+        {
+            Codprod = "PROD001",
+            Cantidad = 5,
+            Pventa = 100.00m,
+            Subtotal = 500.00m
+        }
+    }
+};
+
+await _context.Ventas.AddAsync(venta);
+await _context.SaveChangesAsync();
+```
+
+## Best Practices
+
+1. **Always use navigation properties** instead of manual joins
+2. **Use Include() for eager loading** to avoid N+1 queries
+3. **Initialize collections** in constructors or property initializers
+4. **Use partial classes** for adding custom logic without modifying generated code
+5. **Respect soft deletes** - filter by `Estado` flags
+6. **Handle nullable types** properly with null-conditional operators
+
+## Next Steps
+
+- Review [Data Access Layer](/development/data-access) for DbContext configuration
+- Explore [Application Architecture](/development/architecture) for overall structure

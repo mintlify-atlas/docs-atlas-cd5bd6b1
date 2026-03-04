@@ -1,0 +1,226 @@
+---
+title: "Customers and Suppliers Tables"
+description: "Database schema documentation for clientes (customers) and proveedores (suppliers) tables"
+---
+
+## Overview
+
+The customers and suppliers tables manage business relationships with external parties. The `clientes` table tracks customer information for sales transactions, while the `proveedores` table maintains supplier data for purchase operations.
+
+## Clientes Table
+
+The `clientes` table stores customer information including contact details and status.
+
+### SQL Schema
+
+```sql
+CREATE TABLE clientes(
+    codclien VARCHAR(50) PRIMARY KEY,
+    nombre VARCHAR(200) NOT NULL,
+    telefono VARCHAR(15),
+    email VARCHAR(200),
+    direccion VARCHAR(300),
+    estado BIT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE()
+)
+GO
+
+CREATE INDEX IDX_clientes_nombre ON clientes(nombre)
+GO
+CREATE INDEX IDX_clientes_estado ON clientes(estado)
+GO
+CREATE INDEX IDX_clientes_email ON clientes(email)
+GO
+```
+
+### Columns
+
+<ParamField path="codclien" type="VARCHAR(50)">
+  Primary key. Customer code/identifier. This is a business-defined code that uniquely identifies each customer.
+</ParamField>
+
+<ParamField path="nombre" type="VARCHAR(200)">
+  Customer name or business name. Required field.
+</ParamField>
+
+<ParamField path="telefono" type="VARCHAR(15)">
+  Contact phone number. Optional field.
+</ParamField>
+
+<ParamField path="email" type="VARCHAR(200)">
+  Customer's email address. Optional but indexed for quick searches.
+</ParamField>
+
+<ParamField path="direccion" type="VARCHAR(300)">
+  Physical address or delivery location. Optional field with extended length for complete addresses.
+</ParamField>
+
+<ParamField path="estado" type="BIT">
+  Customer status flag. Defaults to 1 (active). Set to 0 to deactivate customer without deleting historical data.
+</ParamField>
+
+<ParamField path="created_date" type="DATETIME">
+  Timestamp when the customer record was created. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `codclien`
+
+### Indexes
+
+- **IDX_clientes_nombre**: Index on `nombre` for efficient customer name searches
+- **IDX_clientes_estado**: Index on `estado` for filtering active/inactive customers
+- **IDX_clientes_email**: Index on `email` for email-based lookups
+
+### C# Model
+
+```csharp
+public partial class Cliente
+{
+    public string Codclien { get; set; } = null!;
+
+    public string Nombre { get; set; } = null!;
+
+    public string? Telefono { get; set; }
+
+    public string? Email { get; set; }
+
+    public string? Direccion { get; set; }
+
+    public bool? Estado { get; set; }
+
+    public DateTime? CreatedDate { get; set; }
+
+    public virtual ICollection<Venta> Venta { get; set; } = new List<Venta>();
+}
+```
+
+### Relationships
+
+- **One-to-Many with ventas**: One customer can have multiple sales transactions
+
+---
+
+## Proveedores Table
+
+The `proveedores` table stores supplier/vendor information for procurement operations.
+
+### SQL Schema
+
+```sql
+CREATE TABLE proveedores
+(
+    codprovee VARCHAR(50) PRIMARY KEY,
+    nombre VARCHAR(200) NOT NULL,
+    telefono VARCHAR(15),
+    email VARCHAR(200),
+    direccion VARCHAR(300),
+    estado INT DEFAULT 1,
+    created_date DATETIME DEFAULT GETDATE()
+)
+GO
+
+CREATE INDEX IDX_proveedores_nombre ON proveedores(nombre)
+GO
+CREATE INDEX IDX_proveedores_estado ON proveedores(estado)
+GO
+```
+
+### Columns
+
+<ParamField path="codprovee" type="VARCHAR(50)">
+  Primary key. Supplier code/identifier. This is a business-defined code that uniquely identifies each supplier.
+</ParamField>
+
+<ParamField path="nombre" type="VARCHAR(200)">
+  Supplier name or business name. Required field.
+</ParamField>
+
+<ParamField path="telefono" type="VARCHAR(15)">
+  Contact phone number. Optional field.
+</ParamField>
+
+<ParamField path="email" type="VARCHAR(200)">
+  Supplier's email address. Optional field.
+</ParamField>
+
+<ParamField path="direccion" type="VARCHAR(300)">
+  Physical address or business location. Optional field with extended length for complete addresses.
+</ParamField>
+
+<ParamField path="estado" type="INT">
+  Supplier status flag. Defaults to 1 (active). Set to 0 to deactivate supplier without deleting historical data.
+  
+  **Note**: Uses INT type instead of BIT (unlike clientes table), allowing for potential future expansion of status codes.
+</ParamField>
+
+<ParamField path="created_date" type="DATETIME">
+  Timestamp when the supplier record was created. Defaults to current date/time (GETDATE()).
+</ParamField>
+
+### Constraints
+
+- **Primary Key**: `codprovee`
+
+### Indexes
+
+- **IDX_proveedores_nombre**: Index on `nombre` for efficient supplier name searches
+- **IDX_proveedores_estado**: Index on `estado` for filtering active/inactive suppliers
+
+### C# Model
+
+```csharp
+public partial class Proveedore
+{
+    public string Codprovee { get; set; } = null!;
+
+    public string Nombre { get; set; } = null!;
+
+    public string? Telefono { get; set; }
+
+    public string? Email { get; set; }
+
+    public string? Direccion { get; set; }
+
+    public int? Estado { get; set; }
+
+    public DateTime? CreatedDate { get; set; }
+
+    public virtual ICollection<Compra> Compras { get; set; } = new List<Compra>();
+}
+```
+
+### Relationships
+
+- **One-to-Many with compras**: One supplier can be associated with multiple purchase orders
+
+## Entity Relationships
+
+```
+clientes (1) ----< (*) ventas
+
+proveedores (1) ----< (*) compras
+```
+
+## Schema Similarities and Differences
+
+Both tables share a similar structure with these common fields:
+- Business code as primary key (VARCHAR(50))
+- nombre, telefono, email, direccion for contact information
+- estado for active/inactive status
+- created_date for audit tracking
+
+**Key Difference**: 
+- `clientes.estado` is **BIT** (boolean)
+- `proveedores.estado` is **INT** (integer)
+
+This difference allows suppliers to potentially have multiple status codes in the future, while customers use a simple active/inactive flag.
+
+## Usage Notes
+
+- Both tables use business-defined codes as primary keys rather than auto-increment IDs
+- The `estado` field enables soft-deletion to preserve historical transaction integrity
+- Email and name fields are indexed for performance in search operations
+- The extended `direccion` field (300 characters) accommodates complete address information
+- Customer and supplier records should not be deleted if they have associated transactions (ventas/compras)

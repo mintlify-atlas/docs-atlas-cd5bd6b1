@@ -1,0 +1,184 @@
+---
+title: TechCore Mini ERP
+description: Modern ERP system for small businesses built with ASP.NET Core, featuring comprehensive modules for sales, purchases, inventory, and accounts management.
+---
+
+## Enterprise resource planning for small businesses
+
+TechCore Mini ERP is a complete business management solution designed specifically for small to medium enterprises. Built on ASP.NET Core 10.0 with Entity Framework Core and SQL Server, it provides robust business logic, change auditing, and comprehensive reporting capabilities.
+
+<CardGroup cols={2}>
+  <Card title="Sales management" icon="cart-shopping" href="/transactions/sales">
+    Process sales orders with flexible payment options including installment plans with interest calculation
+  </Card>
+  <Card title="Inventory control" icon="boxes-stacked" href="/modules/inventory">
+    Track stock levels with automatic updates, minimum stock alerts, and category-based organization
+  </Card>
+  <Card title="Purchase orders" icon="file-invoice-dollar" href="/transactions/purchases">
+    Manage supplier relationships and purchase orders with detailed tracking and auditing
+  </Card>
+  <Card title="Accounts receivable" icon="money-bill-trend-up" href="/financial/accounts-receivable">
+    Monitor payment plans, track installments, and manage overdue accounts with automated calculations
+  </Card>
+</CardGroup>
+
+## Key features
+
+### Sales management
+
+The sales module handles complete order-to-cash processes with support for multiple payment types:
+
+```csharp TechCore/Models/Venta.cs
+public partial class Venta
+{
+    public string Norden { get; set; } = null!;
+    public string Codclien { get; set; } = null!;
+    public DateTime? Fecha { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal Iva { get; set; }
+    public decimal Total { get; set; }
+    public string? TipoPago { get; set; }  // CONTADO or installment
+    public int? Meses { get; set; }         // Payment term in months
+    public decimal? TasaInteres { get; set; } // Interest rate
+    public decimal Saldo { get; set; }      // Outstanding balance
+}
+```
+
+**Sales features:**
+- Cash and installment payment options
+- Automatic interest calculation for payment plans
+- Real-time balance tracking
+- Sales detail with line items
+- Automatic stock deduction via database triggers
+
+### Inventory management
+
+Track products with comprehensive details including pricing, stock levels, and categorization:
+
+```csharp TechCore/Models/Producto.cs
+public partial class Producto
+{
+    public string Codprod { get; set; } = null!;
+    public int? CodCategoria { get; set; }
+    public string? Descripcion { get; set; }
+    public decimal PrecioCompra { get; set; }
+    public decimal PrecioVenta { get; set; }
+    public int? Stock { get; set; }
+    public int? StockMinimo { get; set; }  // Minimum stock alert threshold
+    public bool? Estado { get; set; }
+}
+```
+
+**Inventory features:**
+- Product categorization system
+- Purchase and sale price tracking
+- Automatic stock updates on sales (via `TR_DisminuirStock` trigger)
+- Low stock alerts with configurable thresholds
+- Product status management (active/inactive)
+
+### Purchase management
+
+Manage supplier relationships and purchase orders with complete traceability:
+
+```csharp TechCore/Models/Compra.cs
+public partial class Compra
+{
+    public string Norden { get; set; } = null!;
+    public string Codprov { get; set; } = null!;  // Supplier code
+    public int Codusu { get; set; }                // User who created order
+    public DateTime? Fecha { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal Iva { get; set; }
+    public decimal Total { get; set; }
+    public int? Estado { get; set; }
+}
+```
+
+**Purchase features:**
+- Supplier management with contact details
+- Purchase order tracking with line items
+- User audit trail for all transactions
+- Tax (IVA) calculation
+- Status tracking for order lifecycle
+
+### Accounts receivable
+
+Comprehensive payment plan management with automated balance updates:
+
+```csharp TechCore/Datos/TechCoreContext.cs
+public virtual DbSet<PlanPago> PlanPagos { get; set; }
+public virtual DbSet<AbonosVenta> AbonosVentas { get; set; }
+public virtual DbSet<VwCuotasPorVencer> VwCuotasPorVencers { get; set; }
+public virtual DbSet<VwCuotasVencida> VwCuotasVencidas { get; set; }
+public virtual DbSet<VwEstadoCuentum> VwEstadoCuenta { get; set; }
+```
+
+**Accounts receivable features:**
+- Payment plan generation for installment sales
+- Payment tracking with automatic balance updates (`TR_ActualizarSaldo` trigger)
+- Upcoming payment reminders (via `vw_CuotasPorVencer` view)
+- Overdue payment tracking with late fee calculations (via `vw_CuotasVencidas` view)
+- Complete account statement views
+
+## Technology stack
+
+<CardGroup cols={3}>
+  <Card title=".NET 10.0" icon="code">
+    Latest ASP.NET Core framework with minimal APIs and modern C# features
+  </Card>
+  <Card title="Entity Framework Core 10.0" icon="database">
+    Code-first ORM with migrations, change tracking, and LINQ support
+  </Card>
+  <Card title="SQL Server" icon="server">
+    Enterprise-grade database with triggers, views, and stored procedures
+  </Card>
+  <Card title="Tailwind CSS 4.2" icon="palette">
+    Utility-first CSS framework for modern, responsive UI
+  </Card>
+  <Card title="DaisyUI 5.5" icon="paintbrush">
+    Component library built on Tailwind for consistent design
+  </Card>
+  <Card title="MVC Pattern" icon="diagram-project">
+    Model-View-Controller architecture for separation of concerns
+  </Card>
+</CardGroup>
+
+## Architecture
+
+TechCore follows a clean, layered architecture:
+
+```
+TechCore/
+├── Controllers/      # MVC controllers for request handling
+├── Models/          # Entity models mapped to database tables
+├── Datos/           # DbContext and data access layer
+├── Views/           # Razor views for UI rendering
+├── ViewModels/      # Request/Response DTOs
+├── Interfaces/      # Service contracts
+├── Concretes/       # Service implementations
+└── wwwroot/         # Static assets (CSS, JS, images)
+```
+
+<Note>
+  The application uses Entity Framework Core's database-first approach, with models scaffolded from an existing SQL Server database that includes optimized indexes, triggers, and views for business logic.
+</Note>
+
+## Database features
+
+**Advanced SQL Server capabilities:**
+- **Triggers**: Automatic stock updates (`TR_DisminuirStock`) and balance calculations (`TR_ActualizarSaldo`)
+- **Views**: Pre-calculated reports for overdue payments, upcoming payments, and account statements
+- **Indexes**: Performance-optimized queries on frequently searched columns (dates, customer codes, product codes)
+- **Constraints**: Foreign key relationships ensuring referential integrity
+- **Audit fields**: Automatic timestamp tracking with `created_date` columns
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Getting started" icon="rocket" href="/getting-started">
+    Set up your development environment and run TechCore locally
+  </Card>
+  <Card title="System requirements" icon="list-check" href="/system-requirements">
+    Review the software and hardware requirements for deployment
+  </Card>
+</CardGroup>

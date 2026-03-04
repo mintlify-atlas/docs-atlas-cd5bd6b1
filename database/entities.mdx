@@ -1,0 +1,598 @@
+---
+title: Database Entities
+description: Complete reference of all database tables, columns, and relationships in TechCore Mini ERP
+---
+
+## Overview
+
+TechCore Mini ERP contains 12 core entities organized into functional modules. Each entity is implemented as both a SQL Server table and a corresponding C# Entity Framework model.
+
+## User Management
+
+### rol
+
+Defines user roles and permission levels in the system.
+
+**Table Name**: `rol`  
+**Primary Key**: `id` (INT, IDENTITY)  
+**Entity Framework Model**: `Rol`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | INT | No | IDENTITY | Unique role identifier |
+| nombreRol | VARCHAR(100) | No | - | Role name (e.g., "Administrador", "Vendedor") |
+| habilitado | BIT | No | 1 | Whether the role is active |
+
+**Indexes**:
+- `IDX_rol_habilitado` on `habilitado`
+
+**Relationships**:
+- One-to-Many with `users`
+
+---
+
+### users
+
+Stores system user accounts with authentication credentials.
+
+**Table Name**: `users`  
+**Primary Key**: `id` (INT, IDENTITY)  
+**Entity Framework Model**: `User`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | INT | No | IDENTITY | Unique user identifier |
+| code | VARCHAR(10) | No | - | User code (unique, e.g., "USR-001") |
+| nombre | VARCHAR(200) | No | - | Full name |
+| username | VARCHAR(100) | No | - | Login username (unique) |
+| pwd | VARCHAR(MAX) | No | - | Hashed password |
+| phone | VARCHAR(15) | Yes | NULL | Contact phone number |
+| idrol | INT | No | - | Foreign key to rol |
+| email | VARCHAR(200) | Yes | NULL | Email address |
+| created_date | DATETIME | No | GETDATE() | Account creation timestamp |
+
+**Indexes**:
+- `IDX_users_code` (UNIQUE) on `code`
+- `UQ__users__F3DBC572` (UNIQUE) on `username`
+- `IDX_users_idrol` on `idrol`
+- `IDX_users_email` on `email`
+
+**Relationships**:
+- Many-to-One with `rol` (idrol → rol.id)
+- One-to-Many with `ventas` (sales created by user)
+- One-to-Many with `compras` (purchases created by user)
+
+<Warning>
+  The `pwd` field should always store hashed passwords using a secure algorithm like BCrypt or PBKDF2. Never store plain-text passwords.
+</Warning>
+
+---
+
+## Master Data
+
+### categoria
+
+Product categories for inventory organization.
+
+**Table Name**: `categoria`  
+**Primary Key**: `codCategoria` (INT, IDENTITY)  
+**Entity Framework Model**: `Categorium`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| codCategoria | INT | No | IDENTITY | Unique category identifier |
+| codigo | VARCHAR(20) | No | - | Category code (unique, e.g., "CAT-001") |
+| nombre | VARCHAR(150) | No | - | Category name |
+| descripcion | VARCHAR(300) | Yes | NULL | Category description |
+| estado | BIT | No | 1 | Active/inactive status |
+| created_date | DATETIME | No | GETDATE() | Creation timestamp |
+
+**Indexes**:
+- `IDX_categoria_codigo` (UNIQUE) on `codigo`
+- `IDX_categoria_nombre` on `nombre`
+- `IDX_categoria_estado` on `estado`
+
+**Relationships**:
+- One-to-Many with `productos`
+
+---
+
+### clientes
+
+Customer master data.
+
+**Table Name**: `clientes`  
+**Primary Key**: `codclien` (VARCHAR(50))  
+**Entity Framework Model**: `Cliente`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| codclien | VARCHAR(50) | No | - | Customer code (e.g., "CUST-001") |
+| nombre | VARCHAR(200) | No | - | Customer name |
+| telefono | VARCHAR(15) | Yes | NULL | Phone number |
+| email | VARCHAR(200) | Yes | NULL | Email address |
+| direccion | VARCHAR(300) | Yes | NULL | Physical address |
+| estado | BIT | No | 1 | Active/inactive status |
+| created_date | DATETIME | No | GETDATE() | Registration date |
+
+**Indexes**:
+- `IDX_clientes_nombre` on `nombre`
+- `IDX_clientes_estado` on `estado`
+- `IDX_clientes_email` on `email`
+
+**Relationships**:
+- One-to-Many with `ventas`
+
+---
+
+### proveedores
+
+Supplier/vendor master data.
+
+**Table Name**: `proveedores`  
+**Primary Key**: `codprovee` (VARCHAR(50))  
+**Entity Framework Model**: `Proveedore`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| codprovee | VARCHAR(50) | No | - | Supplier code (e.g., "SUPP-001") |
+| nombre | VARCHAR(200) | No | - | Supplier name |
+| telefono | VARCHAR(15) | Yes | NULL | Phone number |
+| email | VARCHAR(200) | Yes | NULL | Email address |
+| direccion | VARCHAR(300) | Yes | NULL | Physical address |
+| estado | INT | No | 1 | Active/inactive status |
+| created_date | DATETIME | No | GETDATE() | Registration date |
+
+**Indexes**:
+- `IDX_proveedores_nombre` on `nombre`
+- `IDX_proveedores_estado` on `estado`
+
+**Relationships**:
+- One-to-Many with `compras`
+
+<Note>
+  The `estado` field uses INT type for suppliers but BIT type for customers, indicating a potential schema evolution where suppliers may support multiple states beyond active/inactive.
+</Note>
+
+---
+
+### productos
+
+Product catalog with inventory tracking.
+
+**Table Name**: `productos`  
+**Primary Key**: `codprod` (VARCHAR(50))  
+**Entity Framework Model**: `Producto`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| codprod | VARCHAR(50) | No | - | Product code/SKU |
+| codCategoria | INT | Yes | NULL | Foreign key to categoria |
+| descripcion | VARCHAR(500) | Yes | NULL | Product description |
+| precioCompra | DECIMAL(18,2) | No | - | Purchase price (cost) |
+| precioVenta | DECIMAL(18,2) | No | - | Selling price |
+| stock | INT | No | 0 | Current inventory quantity |
+| stockMinimo | INT | No | 5 | Minimum stock threshold for reorder alerts |
+| estado | BIT | No | 1 | Active/inactive status |
+| created_date | DATETIME | No | GETDATE() | Creation timestamp |
+
+**Indexes**:
+- `IDX_productos_descripcion` on `descripcion`
+- `IDX_productos_idcategoria` on `codCategoria`
+- `IDX_productos_estado` on `estado`
+- `IDX_productos_stock` (COMPOSITE) on `(stock, stockMinimo)` - optimized for low stock queries
+
+**Relationships**:
+- Many-to-One with `categoria` (codCategoria → categoria.codCategoria)
+- One-to-Many with `ventasDetalle`
+- One-to-Many with `comprasDetalle`
+
+**Business Logic**:
+- Stock is automatically decreased by the `TR_DisminuirStock` trigger when sales are created
+- The composite index on stock fields enables efficient queries like: `WHERE stock <= stockMinimo`
+
+---
+
+## Sales Module
+
+### ventas
+
+Sales order header information.
+
+**Table Name**: `ventas`  
+**Primary Key**: `norden` (VARCHAR(50))  
+**Entity Framework Model**: `Venta`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| norden | VARCHAR(50) | No | - | Order number (e.g., "V-2024-0001") |
+| ordenN | INT | No | - | Sequential order number |
+| codclien | VARCHAR(50) | No | - | Customer code (FK to clientes) |
+| codvend | INT | No | - | Salesperson user ID (FK to users) |
+| fecha | DATETIME | No | GETDATE() | Order date |
+| subtotal | DECIMAL(18,2) | No | - | Subtotal before tax |
+| iva | DECIMAL(18,2) | No | - | Tax amount |
+| total | DECIMAL(18,2) | No | - | Total amount including tax |
+| tipoPago | VARCHAR(20) | No | 'CONTADO' | Payment type: 'CONTADO' (cash) or 'CREDITO' (credit) |
+| meses | INT | Yes | NULL | Number of installment months (for credit sales) |
+| tasaInteres | DECIMAL(5,2) | No | 0 | Interest rate percentage |
+| saldo | DECIMAL(18,2) | No | - | Outstanding balance |
+| nula | BIT | No | 0 | Whether the sale is voided (0=valid, 1=voided) |
+| estado | BIT | No | 1 | Active status |
+
+**Indexes**:
+- `IDX_ventas_codclien` on `codclien`
+- `IDX_ventas_codvend` on `codvend`
+- `IDX_ventas_fecha` on `fecha`
+- `IDX_ventas_tipoPago` on `tipoPago`
+- `IDX_ventas_nula` (FILTERED) on `nula WHERE nula = 0` - optimized for active sales queries
+
+**Relationships**:
+- Many-to-One with `clientes` (codclien → clientes.codclien)
+- Many-to-One with `users` (codvend → users.id)
+- One-to-Many with `ventasDetalle` (CASCADE DELETE)
+- One-to-Many with `planPagos` (CASCADE DELETE)
+- One-to-Many with `abonosVentas` (CASCADE DELETE)
+
+**Business Rules**:
+- For cash sales (`tipoPago = 'CONTADO'`): `saldo` should equal 0, `meses` is NULL
+- For credit sales (`tipoPago = 'CREDITO'`): `saldo` starts at `total` and decreases as payments are made
+- Voided sales (`nula = 1`) don't affect inventory or reports
+
+---
+
+### ventasDetalle
+
+Sales order line items.
+
+**Table Name**: `ventasDetalle`  
+**Primary Key**: `id` (INT, IDENTITY)  
+**Entity Framework Model**: `VentasDetalle`  
+**Trigger**: `TR_DisminuirStock`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | INT | No | IDENTITY | Unique line item identifier |
+| norden | VARCHAR(50) | No | - | Order number (FK to ventas) |
+| codprod | VARCHAR(50) | No | - | Product code (FK to productos) |
+| cantidad | INT | No | - | Quantity sold |
+| pventa | DECIMAL(18,2) | No | - | Unit price |
+| subtotal | DECIMAL(18,2) | No | - | Line total (cantidad × pventa) |
+
+**Indexes**:
+- `IDX_ventasDetalle_norden` on `norden`
+- `IDX_ventasDetalle_codprod` on `codprod`
+
+**Relationships**:
+- Many-to-One with `ventas` (norden → ventas.norden, CASCADE DELETE)
+- Many-to-One with `productos` (codprod → productos.codprod)
+
+**Triggers**:
+- `TR_DisminuirStock`: Automatically decreases product stock when line items are inserted (only for non-voided sales)
+
+---
+
+### planPagos
+
+Installment payment schedule for credit sales.
+
+**Table Name**: `planPagos`  
+**Primary Key**: `id` (INT, IDENTITY)  
+**Entity Framework Model**: `PlanPago`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | INT | No | IDENTITY | Unique installment identifier |
+| norden | VARCHAR(50) | No | - | Order number (FK to ventas) |
+| numeroCuota | INT | No | - | Installment number (1, 2, 3...) |
+| fechaVencimiento | DATE | No | - | Due date |
+| montoCuota | DECIMAL(18,2) | No | - | Installment amount |
+| pagada | BIT | No | 0 | Payment status (0=pending, 1=paid) |
+
+**Indexes**:
+- `IDX_planPagos_norden` on `norden`
+- `IDX_planPagos_fechaVencimiento` on `fechaVencimiento`
+- `IDX_planPagos_pagada` (FILTERED) on `pagada WHERE pagada = 0` - optimized for pending payment queries
+
+**Relationships**:
+- Many-to-One with `ventas` (norden → ventas.norden, CASCADE DELETE)
+
+**Used By Views**:
+- `vw_CuotasVencidas`: Shows overdue installments with late fees
+- `vw_CuotasPorVencer`: Shows upcoming installments
+
+---
+
+### abonosVentas
+
+Payment transactions for credit sales.
+
+**Table Name**: `abonosVentas`  
+**Primary Key**: `id` (INT, IDENTITY)  
+**Entity Framework Model**: `AbonosVenta`  
+**Trigger**: `TR_ActualizarSaldo`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | INT | No | IDENTITY | Unique payment identifier |
+| norden | VARCHAR(50) | No | - | Order number (FK to ventas) |
+| fecha | DATETIME | No | GETDATE() | Payment date |
+| monto | DECIMAL(18,2) | No | - | Payment amount |
+| numeroCuota | INT | No | - | Installment number being paid |
+
+**Indexes**:
+- `IDX_abonosVentas_norden` on `norden`
+- `IDX_abonosVentas_fecha` on `fecha`
+
+**Relationships**:
+- Many-to-One with `ventas` (norden → ventas.norden, CASCADE DELETE)
+
+**Triggers**:
+- `TR_ActualizarSaldo`: Automatically updates `ventas.saldo` and marks the corresponding `planPagos` record as paid
+
+**Business Logic Example**:
+```sql
+-- Recording a payment automatically:
+-- 1. Decreases ventas.saldo by monto
+-- 2. Sets planPagos.pagada = 1 for the matching numeroCuota
+INSERT INTO abonosVentas (norden, monto, numeroCuota) 
+VALUES ('V-2024-0001', 500.00, 1)
+```
+
+---
+
+## Purchases Module
+
+### compras
+
+Purchase order header information.
+
+**Table Name**: `compras`  
+**Primary Key**: `norden` (VARCHAR(50))  
+**Entity Framework Model**: `Compra`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| norden | VARCHAR(50) | No | - | Purchase order number |
+| ordenN | INT | No | - | Sequential order number |
+| codprov | VARCHAR(50) | No | - | Supplier code (FK to proveedores) |
+| codusu | INT | No | - | User who created the PO (FK to users) |
+| fecha | DATETIME | No | GETDATE() | Order date |
+| subtotal | DECIMAL(18,2) | No | - | Subtotal before tax |
+| iva | DECIMAL(18,2) | No | - | Tax amount |
+| total | DECIMAL(18,2) | No | - | Total amount |
+| estado | INT | No | 1 | Order status |
+
+**Indexes**:
+- `IDX_compras_codprov` on `codprov`
+- `IDX_compras_codusu` on `codusu`
+- `IDX_compras_fecha` on `fecha`
+- `IDX_compras_estado` on `estado`
+
+**Relationships**:
+- Many-to-One with `proveedores` (codprov → proveedores.codprovee)
+- Many-to-One with `users` (codusu → users.id)
+- One-to-Many with `comprasDetalle` (CASCADE DELETE)
+
+---
+
+### comprasDetalle
+
+Purchase order line items.
+
+**Table Name**: `comprasDetalle`  
+**Primary Key**: `id` (INT, IDENTITY)  
+**Entity Framework Model**: `ComprasDetalle`
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | INT | No | IDENTITY | Unique line item identifier |
+| norden | VARCHAR(50) | No | - | Order number (FK to compras) |
+| codprod | VARCHAR(50) | No | - | Product code (FK to productos) |
+| cantidad | INT | No | - | Quantity purchased |
+| precio | DECIMAL(18,2) | No | - | Unit cost |
+| subtotal | DECIMAL(18,2) | No | - | Line total (cantidad × precio) |
+
+**Indexes**:
+- `IDX_comprasDetalle_norden` on `norden`
+- `IDX_comprasDetalle_codprod` on `codprod`
+
+**Relationships**:
+- Many-to-One with `compras` (norden → compras.norden, CASCADE DELETE)
+- Many-to-One with `productos` (codprod → productos.codprod)
+
+<Note>
+  Unlike sales, purchases do not automatically increase inventory via triggers. Inventory increases must be handled programmatically in the application layer after receiving goods.
+</Note>
+
+---
+
+## Database Views
+
+Three read-only views provide business intelligence for credit management.
+
+### vw_CuotasVencidas
+
+Shows overdue installments with calculated late fees.
+
+**Entity Framework Model**: `VwCuotasVencida`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| norden | VARCHAR(50) | Order number |
+| cliente | VARCHAR(200) | Customer name |
+| numeroCuota | INT | Installment number |
+| fechaVencimiento | DATE | Original due date |
+| montoCuota | DECIMAL(18,2) | Installment amount |
+| diasAtraso | INT | Days overdue |
+| moraCalculada | NUMERIC(32,4) | Late fee (2% daily interest) |
+
+**SQL Definition**:
+```sql
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota,
+    DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS diasAtraso,
+    (pp.montoCuota * 0.02) * DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS moraCalculada
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+AND pp.fechaVencimiento < GETDATE()
+AND v.nula = 0
+```
+
+---
+
+### vw_CuotasPorVencer
+
+Shows upcoming installments that haven't reached their due date.
+
+**Entity Framework Model**: `VwCuotasPorVencer`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| norden | VARCHAR(50) | Order number |
+| cliente | VARCHAR(200) | Customer name |
+| numeroCuota | INT | Installment number |
+| fechaVencimiento | DATE | Due date |
+| montoCuota | DECIMAL(18,2) | Installment amount |
+
+---
+
+### vw_EstadoCuenta
+
+Provides account statement summary for credit sales.
+
+**Entity Framework Model**: `VwEstadoCuentum`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| norden | VARCHAR(50) | Order number |
+| cliente | VARCHAR(200) | Customer name |
+| total | DECIMAL(18,2) | Original total amount |
+| saldo | DECIMAL(18,2) | Current outstanding balance |
+| meses | INT | Number of installments |
+| totalAbonado | DECIMAL(38,2) | Sum of all payments made |
+
+---
+
+## Entity Framework DbContext
+
+All entities are registered in the `TechCoreContext` class:
+
+```csharp
+public partial class TechCoreContext : DbContext
+{
+    public virtual DbSet<AbonosVenta> AbonosVentas { get; set; }
+    public virtual DbSet<Categorium> Categoria { get; set; }
+    public virtual DbSet<Cliente> Clientes { get; set; }
+    public virtual DbSet<Compra> Compras { get; set; }
+    public virtual DbSet<ComprasDetalle> ComprasDetalles { get; set; }
+    public virtual DbSet<PlanPago> PlanPagos { get; set; }
+    public virtual DbSet<Producto> Productos { get; set; }
+    public virtual DbSet<Proveedore> Proveedores { get; set; }
+    public virtual DbSet<Rol> Rols { get; set; }
+    public virtual DbSet<User> Users { get; set; }
+    public virtual DbSet<Venta> Ventas { get; set; }
+    public virtual DbSet<VentasDetalle> VentasDetalles { get; set; }
+    public virtual DbSet<VwCuotasPorVencer> VwCuotasPorVencers { get; set; }
+    public virtual DbSet<VwCuotasVencida> VwCuotasVencidas { get; set; }
+    public virtual DbSet<VwEstadoCuentum> VwEstadoCuenta { get; set; }
+}
+```
+
+Configuration is performed via the Fluent API in `OnModelCreating()` method at TechCore/Datos/TechCoreContext.cs:45.
+
+## Common Query Patterns
+
+### Get Products Below Minimum Stock
+
+```csharp
+var lowStock = await _context.Productos
+    .Where(p => p.Stock <= p.StockMinimo && p.Estado)
+    .Include(p => p.CodCategoriaNavigation)
+    .ToListAsync();
+```
+
+### Get Customer Account Balance
+
+```csharp
+var balance = await _context.Ventas
+    .Where(v => v.Codclien == customerId && v.TipoPago == "CREDITO" && !v.Nula)
+    .SumAsync(v => v.Saldo);
+```
+
+### Get Overdue Payments
+
+```csharp
+var overdue = await _context.VwCuotasVencidas
+    .OrderByDescending(c => c.DiasAtraso)
+    .ToListAsync();
+```
+
+### Get Sales with Details
+
+```csharp
+var sale = await _context.Ventas
+    .Include(v => v.CodclienNavigation)
+    .Include(v => v.CodvendNavigation)
+    .Include(v => v.VentasDetalles)
+        .ThenInclude(d => d.CodprodNavigation)
+    .FirstOrDefaultAsync(v => v.Norden == orderNumber);
+```
+
+## Data Migration Considerations
+
+<Warning>
+  When migrating data or changing schemas, be aware of these dependencies:
+</Warning>
+
+### Foreign Key Constraints Order
+
+When populating tables, follow this order to respect foreign key constraints:
+
+1. `rol`
+2. `users` (depends on rol)
+3. `categoria`
+4. `productos` (depends on categoria)
+5. `clientes`
+6. `proveedores`
+7. `ventas` (depends on users, clientes)
+8. `ventasDetalle` (depends on ventas, productos)
+9. `compras` (depends on users, proveedores)
+10. `comprasDetalle` (depends on compras, productos)
+11. `planPagos` (depends on ventas)
+12. `abonosVentas` (depends on ventas)
+
+### Cascade Deletes
+
+These relationships will automatically delete child records:
+
+- Deleting `ventas` → deletes `ventasDetalle`, `planPagos`, `abonosVentas`
+- Deleting `compras` → deletes `comprasDetalle`
+
+### Non-Cascade Deletes
+
+These relationships require manual cleanup or will prevent deletion:
+
+- `categoria` with existing `productos`
+- `productos` with existing `ventasDetalle` or `comprasDetalle`
+- `clientes` with existing `ventas`
+- `proveedores` with existing `compras`
+- `rol` with existing `users`
+- `users` with existing `ventas` or `compras`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Setup" icon="screwdriver-wrench" href="/database/setup">
+    Install and configure the database
+  </Card>
+  <Card title="Database Overview" icon="book" href="/database/overview">
+    Learn about database architecture and design
+  </Card>
+</CardGroup>

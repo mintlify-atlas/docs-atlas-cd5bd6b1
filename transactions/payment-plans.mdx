@@ -1,0 +1,292 @@
+---
+title: Payment Plans
+description: Understand how installment payment plans work for credit sales in TechCore Mini ERP
+---
+
+## Overview
+
+Payment plans enable customers to pay for sales over time through monthly installments. When a sale is created with `TipoPago = 'CREDITO'`, the system automatically generates a payment schedule based on the number of months and interest rate specified.
+
+## Payment Plan Entity
+
+The `PlanPago` entity represents a single installment within a payment schedule.
+
+### Entity Fields
+
+<ParamField path="Id" type="int" required>
+  Auto-generated installment identifier (primary key)
+</ParamField>
+
+<ParamField path="Norden" type="string" required>
+  Sale order reference (foreign key to `ventas`)
+</ParamField>
+
+<ParamField path="NumeroCuota" type="int" required>
+  Installment number (1, 2, 3, etc.)
+</ParamField>
+
+<ParamField path="FechaVencimiento" type="DateOnly" required>
+  Due date for this installment
+</ParamField>
+
+<ParamField path="MontoCuota" type="decimal" required>
+  Amount due for this installment
+</ParamField>
+
+<ParamField path="Pagada" type="bool" default="false">
+  Payment status (false = pending, true = paid)
+</ParamField>
+
+### Relationships
+
+- **NordenNavigation**: Parent sale record (`Venta`)
+
+## Generating a Payment Plan
+
+<Steps>
+  <Step title="Verify Credit Sale">
+    Ensure the sale has:
+    - `TipoPago = 'CREDITO'`
+    - `Meses` > 0 (number of monthly installments)
+    - `TasaInteres` >= 0 (interest rate percentage)
+  </Step>
+  
+  <Step title="Calculate Total with Interest">
+    Apply the interest rate to the sale total:
+    ```csharp
+    decimal totalWithInterest = sale.Total * (1 + (sale.TasaInteres / 100));
+    ```
+    
+    For example, a $1,000 sale with 5% interest:
+    ```
+    Total: $1,000
+    Interest Rate: 5%
+    Total with Interest: $1,000 × 1.05 = $1,050
+    ```
+  </Step>
+  
+  <Step title="Calculate Installment Amount">
+    Divide the total with interest by the number of months:
+    ```csharp
+    decimal installmentAmount = totalWithInterest / sale.Meses;
+    ```
+    
+    Continuing the example with 6 months:
+    ```
+    Monthly Payment: $1,050 ÷ 6 = $175.00
+    ```
+  </Step>
+  
+  <Step title="Create Installment Records">
+    Generate one `PlanPago` record for each month:
+    ```csharp
+    for (int i = 1; i <= sale.Meses; i++) {
+        var installment = new PlanPago {
+            Norden = sale.Norden,
+            NumeroCuota = i,
+            FechaVencimiento = DateOnly.FromDateTime(
+                sale.Fecha.Value.AddMonths(i)
+            ),
+            MontoCuota = installmentAmount,
+            Pagada = false
+        };
+        context.PlanPagos.Add(installment);
+    }
+    ```
+    
+    This creates installments with monthly due dates starting from the sale date.
+  </Step>
+</Steps>
+
+## Payment Plan Example
+
+A sale created on January 15, 2026:
+- **Total**: $1,200.00
+- **Interest Rate**: 3%
+- **Months**: 4
+
+**Calculation:**
+```
+Total with Interest: $1,200 × 1.03 = $1,236.00
+Monthly Payment: $1,236 ÷ 4 = $309.00
+```
+
+**Generated Plan:**
+
+| Installment | Due Date | Amount | Status |
+|-------------|----------|--------|--------|
+| 1 | Feb 15, 2026 | $309.00 | Pending |
+| 2 | Mar 15, 2026 | $309.00 | Pending |
+| 3 | Apr 15, 2026 | $309.00 | Pending |
+| 4 | May 15, 2026 | $309.00 | Pending |
+
+## Tracking Installment Status
+
+The `Pagada` field indicates whether an installment has been paid:
+
+- **false (0)**: Installment is pending payment
+- **true (1)**: Installment has been paid
+
+When a payment (`AbonosVenta`) is recorded with a `NumeroCuota`, the corresponding installment is automatically marked as paid via the `TR_ActualizarSaldo` trigger.
+
+## Overdue Installments
+
+The system provides a view to identify overdue installments:
+
+### vw_CuotasVencidas
+
+This view shows unpaid installments past their due date:
+
+```sql
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota,
+    DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS diasAtraso,
+    (pp.montoCuota * 0.02) * DATEDIFF(DAY, pp.fechaVencimiento, GETDATE()) AS moraCalculada
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+  AND pp.fechaVencimiento < GETDATE()
+  AND v.nula = 0
+```
+
+**Key Fields:**
+- **diasAtraso**: Number of days past due
+- **moraCalculada**: Late fee (2% of installment amount × days overdue)
+
+## Upcoming Installments
+
+### vw_CuotasPorVencer
+
+This view shows unpaid installments not yet due:
+
+```sql
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    pp.numeroCuota,
+    pp.fechaVencimiento,
+    pp.montoCuota
+FROM planPagos pp
+INNER JOIN ventas v ON pp.norden = v.norden
+INNER JOIN clientes c ON v.codclien = c.codclien
+WHERE pp.pagada = 0
+  AND pp.fechaVencimiento >= GETDATE()
+  AND v.nula = 0
+```
+
+Use this to:
+- Send payment reminders to customers
+- Plan cash flow forecasts
+- Identify upcoming collections
+
+## Account Status
+
+### vw_EstadoCuenta
+
+This view summarizes the payment status for each credit sale:
+
+```sql
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    v.total,
+    v.saldo,
+    v.meses,
+    SUM(ISNULL(a.monto,0)) AS totalAbonado
+FROM ventas v
+INNER JOIN clientes c ON v.codclien = c.codclien
+LEFT JOIN abonosVentas a ON v.norden = a.norden
+WHERE v.tipoPago = 'CREDITO'
+  AND v.nula = 0
+GROUP BY v.norden, c.nombre, v.total, v.saldo, v.meses
+```
+
+**Use Cases:**
+- Display customer account balance
+- Track total payments received
+- Calculate remaining balance
+
+## Cascade Deletion
+
+Payment plans are configured with `ON DELETE CASCADE`:
+
+```sql
+FOREIGN KEY (norden) REFERENCES ventas(norden) ON DELETE CASCADE
+```
+
+This means:
+- Deleting a sale automatically deletes all associated payment plan records
+- Ensures referential integrity
+- Simplifies data cleanup for voided sales
+
+## Database Schema
+
+```sql
+CREATE TABLE planPagos(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    norden VARCHAR(50) NOT NULL,
+    numeroCuota INT NOT NULL,
+    fechaVencimiento DATE NOT NULL,
+    montoCuota DECIMAL(18,2) NOT NULL,
+    pagada BIT DEFAULT 0,
+    FOREIGN KEY (norden) REFERENCES ventas(norden) ON DELETE CASCADE
+)
+```
+
+## Performance Optimization
+
+The database includes optimized indexes:
+
+```sql
+-- Find installments by sale order
+CREATE INDEX IDX_planPagos_norden ON planPagos(norden)
+
+-- Query by due date for reminders
+CREATE INDEX IDX_planPagos_fechaVencimiento ON planPagos(fechaVencimiento)
+
+-- Filter unpaid installments efficiently
+CREATE INDEX IDX_planPagos_pagada ON planPagos(pagada) WHERE pagada = 0
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Interest Rate Validation">
+    Validate interest rates before generating payment plans:
+    ```csharp
+    if (sale.TasaInteres < 0 || sale.TasaInteres > 50) {
+        throw new ArgumentException("Interest rate must be between 0% and 50%");
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Installment Count Limits">
+    Set reasonable limits on installment periods:
+    ```csharp
+    if (sale.Meses < 1 || sale.Meses > 36) {
+        throw new ArgumentException("Payment plan must be between 1 and 36 months");
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Rounding Adjustments">
+    Handle rounding differences in the final installment:
+    ```csharp
+    decimal totalInstallments = installmentAmount * (sale.Meses - 1);
+    decimal finalInstallment = totalWithInterest - totalInstallments;
+    
+    // Last installment may differ slightly due to rounding
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Sales](/transactions/sales) - Creating credit sales
+- [Payments](/transactions/payments) - Recording installment payments
+- [Customers](/entities/customers) - Managing customer information

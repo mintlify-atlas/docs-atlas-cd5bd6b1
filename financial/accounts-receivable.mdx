@@ -1,0 +1,186 @@
+---
+title: Accounts Receivable
+description: Track credit sales, payment plans, and customer account balances in TechCore Mini ERP
+---
+
+## Overview
+
+The Accounts Receivable module tracks all credit sales and manages customer payment obligations. The system automatically monitors payment schedules, calculates outstanding balances, and provides real-time visibility into customer accounts.
+
+## Database View: vw_EstadoCuenta
+
+The account statement view (`vw_EstadoCuenta`) aggregates all credit sales and their payment status:
+
+```sql
+CREATE VIEW vw_EstadoCuenta
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    v.total,
+    v.saldo,
+    v.meses,
+    SUM(ISNULL(a.monto,0)) AS totalAbonado
+FROM ventas v
+INNER JOIN clientes c ON v.codclien = c.codclien
+LEFT JOIN abonosVentas a ON v.norden = a.norden
+WHERE v.tipoPago = 'CREDITO'
+AND v.nula = 0
+GROUP BY v.norden, c.nombre, v.total, v.saldo, v.meses
+```
+
+### View Filters
+
+<AccordionGroup>
+  <Accordion title="Credit Sales Only">
+    The view filters for `tipoPago = 'CREDITO'` to include only credit transactions, excluding cash sales which don't generate receivables.
+  </Accordion>
+  
+  <Accordion title="Active Sales Only">
+    Sales marked as void (`nula = 1`) are excluded from the accounts receivable tracking through the condition `v.nula = 0`.
+  </Accordion>
+</AccordionGroup>
+
+## View Model Properties
+
+The `VwEstadoCuentum` class in `TechCore.Models` represents the account statement data:
+
+<ParamField path="Norden" type="string" required>
+  The unique order number for the credit sale
+</ParamField>
+
+<ParamField path="Cliente" type="string" required>
+  Customer name from the `clientes` table
+</ParamField>
+
+<ParamField path="Total" type="decimal" required>
+  Original total amount of the sale including IVA (tax)
+</ParamField>
+
+<ParamField path="Saldo" type="decimal" required>
+  Current outstanding balance after payments. Updated automatically by the `TR_ActualizarSaldo` trigger when payments are posted to `abonosVentas`
+</ParamField>
+
+<ParamField path="Meses" type="int" optional>
+  Number of months in the payment plan. Null for sales without installment plans
+</ParamField>
+
+<ParamField path="TotalAbonado" type="decimal" optional>
+  Sum of all payments made against this sale from the `abonosVentas` table. Returns 0 if no payments have been made
+</ParamField>
+
+## How Accounts Receivable Tracking Works
+
+### Credit Sale Creation
+
+When a sale is created with `tipoPago = 'CREDITO'`:
+
+1. **Initial State**: The `saldo` field is set equal to the `total` amount
+2. **Payment Plan**: If installments are required, records are created in the `planPagos` table with:
+   - `numeroCuota`: Installment number (1, 2, 3, etc.)
+   - `fechaVencimiento`: Due date for each installment
+   - `montoCuota`: Amount due for each installment
+   - `pagada`: Initially set to `0` (unpaid)
+
+### Payment Processing
+
+When a customer makes a payment:
+
+1. A record is inserted into the `abonosVentas` table with:
+   - `norden`: The order number
+   - `fecha`: Payment date
+   - `monto`: Payment amount
+   - `numeroCuota`: The installment number being paid
+
+2. The `TR_ActualizarSaldo` trigger automatically:
+   - Reduces the `saldo` in the `ventas` table by the payment amount
+   - Marks the corresponding installment as paid (`pagada = 1`) in `planPagos`
+
+<Note>
+The trigger ensures data consistency by automatically updating both the sale balance and installment status in a single transaction.
+</Note>
+
+### Balance Calculation
+
+The account statement view calculates:
+- **Total**: Original sale amount (unchanged)
+- **TotalAbonado**: Sum of all payments from `abonosVentas`
+- **Saldo**: Remaining balance = Total - TotalAbonado
+
+<Warning>
+The `saldo` field in the `ventas` table is the source of truth for the remaining balance. While `totalAbonado` is calculated in the view for reference, the actual balance is maintained by the trigger.
+</Warning>
+
+## Usage Examples
+
+### Query All Outstanding Receivables
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var receivables = context.VwEstadoCuenta
+        .Where(ec => ec.Saldo > 0)
+        .OrderByDescending(ec => ec.Saldo)
+        .ToList();
+        
+    foreach (var account in receivables)
+    {
+        Console.WriteLine($"Customer: {account.Cliente}");
+        Console.WriteLine($"Order: {account.Norden}");
+        Console.WriteLine($"Total: {account.Total:C}");
+        Console.WriteLine($"Paid: {account.TotalAbonado:C}");
+        Console.WriteLine($"Balance: {account.Saldo:C}");
+    }
+}
+```
+
+### Calculate Total Accounts Receivable
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var totalReceivables = context.VwEstadoCuenta
+        .Sum(ec => ec.Saldo);
+        
+    Console.WriteLine($"Total Accounts Receivable: {totalReceivables:C}");
+}
+```
+
+### Get Customer Payment History
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var customerAccount = context.VwEstadoCuenta
+        .Where(ec => ec.Cliente.Contains("Customer Name"))
+        .ToList();
+        
+    var totalOwed = customerAccount.Sum(ec => ec.Saldo);
+    Console.WriteLine($"Total owed by customer: {totalOwed:C}");
+}
+```
+
+## Related Tables
+
+<CardGroup cols={2}>
+  <Card title="ventas" icon="receipt">
+    Main sales table containing credit transaction details including total amount and current balance
+  </Card>
+  
+  <Card title="planPagos" icon="calendar">
+    Payment schedule with installment amounts and due dates for credit sales
+  </Card>
+  
+  <Card title="abonosVentas" icon="money-bill">
+    Payment records tracking all customer payments against credit sales
+  </Card>
+  
+  <Card title="clientes" icon="users">
+    Customer master data including contact information and account status
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Overdue Payments](/financial/overdue-payments) - Track late payments and calculate penalties
+- [Account Statements](/financial/account-statements) - Generate detailed customer statements

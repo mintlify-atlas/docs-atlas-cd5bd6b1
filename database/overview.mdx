@@ -1,0 +1,194 @@
+---
+title: Database Overview
+description: High-level architecture and design of the TechCore Mini ERP database schema
+---
+
+## Architecture
+
+TechCore Mini ERP uses SQL Server as its relational database management system, with Entity Framework Core as the ORM layer. The database is designed to support core ERP functionality for small businesses including inventory management, sales, purchases, customer relationships, and credit payment tracking.
+
+## Entity Relationship Model
+
+The database schema consists of 12 core tables organized into logical functional areas:
+
+### User Management
+- **rol**: User roles and permissions
+- **users**: System users with authentication credentials
+
+### Master Data
+- **clientes**: Customer information
+- **proveedores**: Supplier/vendor information
+- **categoria**: Product categories
+- **productos**: Product catalog with pricing and inventory
+
+### Transactional Data
+- **ventas** / **ventasDetalle**: Sales orders and line items
+- **compras** / **comprasDetalle**: Purchase orders and line items
+- **planPagos**: Installment payment schedules for credit sales
+- **abonosVentas**: Payment records for credit sales
+
+## Key Design Decisions
+
+### String-Based Primary Keys
+
+Several entities use VARCHAR primary keys instead of auto-incrementing integers:
+
+- **clientes.codclien**: Customer code
+- **proveedores.codprovee**: Supplier code
+- **productos.codprod**: Product code
+- **ventas.norden**: Sales order number
+- **compras.norden**: Purchase order number
+
+This design allows for human-readable business identifiers (e.g., "PROD-001", "CUST-ABC") while maintaining referential integrity through foreign key relationships.
+
+### Order Number Generation
+
+Both sales and purchases use a dual-field approach for order numbering:
+
+```sql
+norden VARCHAR(50) PRIMARY KEY,
+ordenN INT NOT NULL
+```
+
+The `ordenN` field provides a sequential integer, while `norden` serves as the formatted order identifier used throughout the application.
+
+### Soft Deletes and State Management
+
+Most entities implement soft delete patterns using status fields:
+
+- **estado** (BIT or INT): Enables/disables records without physical deletion
+- **nula** (ventas): Marks sales as voided while preserving history
+- **created_date**: Audit trail for record creation
+
+This approach maintains data integrity and provides audit capabilities for compliance.
+
+### Cascade Delete Behavior
+
+Detail tables use `ON DELETE CASCADE` to maintain consistency:
+
+```sql
+FOREIGN KEY (norden) 
+    REFERENCES ventas(norden)
+    ON DELETE CASCADE
+```
+
+When a sales or purchase order is deleted, all associated line items are automatically removed.
+
+## Database Views
+
+Three materialized views support credit management workflows:
+
+<CardGroup cols={3}>
+  <Card title="vw_CuotasVencidas" icon="calendar-xmark">
+    Overdue installments with calculated late fees (2% daily interest)
+  </Card>
+  <Card title="vw_CuotasPorVencer" icon="calendar-clock">
+    Upcoming installments that haven't reached due date
+  </Card>
+  <Card title="vw_EstadoCuenta" icon="file-invoice-dollar">
+    Account statement showing total sales, payments, and remaining balance
+  </Card>
+</CardGroup>
+
+## Database Triggers
+
+Two triggers automate critical business logic:
+
+### TR_DisminuirStock
+
+Automatically decreases product inventory when sales are created:
+
+```sql
+CREATE TRIGGER TR_DisminuirStock
+ON ventasDetalle
+AFTER INSERT
+AS
+BEGIN
+    UPDATE p
+    SET p.stock = p.stock - i.cantidad
+    FROM productos p
+    INNER JOIN inserted i ON p.codprod = i.codprod
+    INNER JOIN ventas v ON v.norden = i.norden
+    WHERE v.nula = 0  -- Only for non-voided sales
+END
+```
+
+### TR_ActualizarSaldo
+
+Updates sales balance and marks installments as paid when payments are recorded:
+
+```sql
+CREATE TRIGGER TR_ActualizarSaldo
+ON abonosVentas
+AFTER INSERT
+AS
+BEGIN
+    -- Reduce outstanding balance
+    UPDATE v
+    SET v.saldo = v.saldo - i.monto
+    FROM ventas v
+    INNER JOIN inserted i ON v.norden = i.norden
+
+    -- Mark installment as paid
+    UPDATE pp
+    SET pagada = 1
+    FROM planPagos pp
+    INNER JOIN inserted i 
+        ON pp.norden = i.norden 
+        AND pp.numeroCuota = i.numeroCuota
+END
+```
+
+## Performance Optimization
+
+The schema includes 30+ indexes strategically placed on:
+
+- Foreign key columns for join performance
+- Frequently filtered columns (estado, fecha, nula)
+- Search columns (nombre, email, descripcion)
+- Composite indexes for complex queries (stock + stockMinimo)
+- Filtered indexes for common WHERE clauses
+
+<Note>
+  Filtered indexes like `IDX_ventas_nula WHERE nula = 0` significantly improve query performance by indexing only active (non-voided) sales records.
+</Note>
+
+## Data Types and Precision
+
+Financial calculations use `DECIMAL(18, 2)` for currency fields, providing:
+
+- 18 total digits of precision
+- 2 decimal places for cents/centavos
+- Exact arithmetic without floating-point errors
+
+The `tasaInteres` field uses `DECIMAL(5, 2)` to store interest rates (e.g., 12.50%).
+
+## Connection Configuration
+
+The application connects to SQL Server using Windows Authentication by default:
+
+```json
+"ConnectionStrings": {
+  "DefaultConnection": "Data Source=.\\;Database=TechCore;Trusted_Connection=True;TrustServerCertificate=True;"
+}
+```
+
+Entity Framework Core is configured in Program.cs:
+
+```csharp
+builder.Services.AddDbContext<TechCoreContext>(options => { 
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    options.UseSqlServer(connectionString);
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Setup" icon="database" href="/database/setup">
+    Step-by-step instructions to create and configure the database
+  </Card>
+  <Card title="Entity Reference" icon="table" href="/database/entities">
+    Detailed documentation of all database entities
+  </Card>
+</CardGroup>

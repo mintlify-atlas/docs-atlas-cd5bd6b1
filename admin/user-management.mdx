@@ -1,0 +1,172 @@
+---
+title: User Management
+description: Manage system users, authentication credentials, and user account information in TechCore Mini ERP
+---
+
+## Overview
+
+The User Management module allows administrators to create, update, and manage user accounts for the TechCore Mini ERP system. Each user is assigned to a role that determines their access permissions throughout the application.
+
+## User Entity
+
+Users are stored in the `users` table with the following properties:
+
+<ResponseField name="Id" type="int" required>
+  Unique identifier for the user (auto-incremented)
+</ResponseField>
+
+<ResponseField name="Code" type="string" required>
+  User code (max 10 characters). Must be unique across all users.
+</ResponseField>
+
+<ResponseField name="Nombre" type="string" required>
+  Full name of the user (max 200 characters)
+</ResponseField>
+
+<ResponseField name="Username" type="string" required>
+  Login username (max 100 characters). Must be unique across all users.
+</ResponseField>
+
+<ResponseField name="Pwd" type="string" required>
+  Password hash for authentication (stored securely)
+</ResponseField>
+
+<ResponseField name="Phone" type="string">
+  Contact phone number (max 15 characters)
+</ResponseField>
+
+<ResponseField name="Idrol" type="int" required>
+  Foreign key reference to the user's assigned role
+</ResponseField>
+
+<ResponseField name="Email" type="string">
+  Email address (max 200 characters)
+</ResponseField>
+
+<ResponseField name="CreatedDate" type="DateTime">
+  Timestamp when the user account was created (defaults to current date/time)
+</ResponseField>
+
+## Database Schema
+
+```sql
+CREATE TABLE users(
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    code VARCHAR(10) NOT NULL,
+    nombre VARCHAR(200) NOT NULL,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    pwd VARCHAR(MAX) NOT NULL,
+    phone VARCHAR(15),
+    idrol INT NOT NULL,
+    email VARCHAR(200),
+    created_date DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (idrol) REFERENCES rol(id)
+)
+```
+
+## Indexes
+
+The users table includes optimized indexes for performance:
+
+- **IDX_users_code**: Unique index on `code` field for fast lookups
+- **IDX_users_idrol**: Index on `idrol` for efficient role-based queries
+- **IDX_users_email**: Index on `email` for email-based searches
+
+## Relationships
+
+<CardGroup cols={2}>
+  <Card title="Role Assignment" icon="user-shield">
+    Each user must be assigned to a role via the `Idrol` property, which references the `rol` table.
+  </Card>
+  <Card title="Sales Tracking" icon="chart-line">
+    Users can be associated with sales records (`Venta`) to track which user processed each sale.
+  </Card>
+  <Card title="Purchase Orders" icon="shopping-cart">
+    Users are linked to purchase orders (`Compra`) to maintain an audit trail of who created each purchase.
+  </Card>
+</CardGroup>
+
+## User Operations
+
+### Creating a New User
+
+When creating a new user account:
+
+1. Assign a unique `Code` (max 10 characters)
+2. Provide a unique `Username` for login
+3. Hash the password before storing in `Pwd` field
+4. Assign an `Idrol` that corresponds to an existing role
+5. Optionally provide contact information (`Phone`, `Email`)
+
+<Warning>
+  Passwords should never be stored in plain text. Always use secure hashing algorithms (e.g., bcrypt, PBKDF2) before storing in the `Pwd` field.
+</Warning>
+
+### User Authentication
+
+Users authenticate using their `Username` and `Pwd` credentials. The system validates:
+
+- Username exists in the database
+- Password hash matches the stored hash
+- Associated role is enabled (`Habilitado = true`)
+
+### User Constraints
+
+<Note>
+  - **Username uniqueness**: The username field has a UNIQUE constraint enforced at the database level
+  - **Code uniqueness**: The code field has a unique index to prevent duplicates
+  - **Role requirement**: All users must have a valid role assigned (foreign key constraint)
+</Note>
+
+## Model Reference
+
+The C# model for User (`TechCore.Models.User`) includes:
+
+```csharp
+public partial class User
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = null!;
+    public string Nombre { get; set; } = null!;
+    public string Username { get; set; } = null!;
+    public string Pwd { get; set; } = null!;
+    public string? Phone { get; set; }
+    public int Idrol { get; set; }
+    public string? Email { get; set; }
+    public DateTime? CreatedDate { get; set; }
+
+    // Navigation properties
+    public virtual ICollection<Compra> Compras { get; set; }
+    public virtual Rol IdrolNavigation { get; set; }
+    public virtual ICollection<Venta> Venta { get; set; }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Password Security">
+    - Always hash passwords using industry-standard algorithms
+    - Never log or display password values
+    - Implement password strength requirements
+    - Consider implementing password expiration policies
+  </Accordion>
+
+  <Accordion title="User Code Management">
+    - Establish a consistent code format (e.g., USR001, USR002)
+    - Keep codes short but meaningful
+    - Use codes for display purposes, not for authentication
+  </Accordion>
+
+  <Accordion title="Email and Phone Validation">
+    - Validate email format before storing
+    - Implement phone number formatting standards
+    - Consider making email required for password recovery
+  </Accordion>
+
+  <Accordion title="Audit Trail">
+    - The `CreatedDate` field automatically tracks when accounts are created
+    - Consider adding additional audit fields (modified date, modified by)
+    - Track user actions through related entities (Compras, Venta)
+  </Accordion>
+</AccordionGroup>

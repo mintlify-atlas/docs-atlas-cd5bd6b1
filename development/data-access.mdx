@@ -1,0 +1,400 @@
+---
+title: Data Access Layer
+description: Entity Framework Core implementation, DbContext configuration, and database relationships in TechCore Mini ERP
+---
+
+## Overview
+
+TechCore uses **Entity Framework Core 10.0.3** as its Object-Relational Mapper (ORM) with **SQL Server** as the database provider. The data access layer is centralized in the `TechCoreContext` class.
+
+## TechCoreContext
+
+Location: `~/workspace/source/TechCore/Datos/TechCoreContext.cs`
+
+The `TechCoreContext` is a partial class that inherits from `DbContext` and manages all database operations.
+
+### Class Definition
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+using TechCore.Models;
+
+namespace TechCore.Datos;
+
+public partial class TechCoreContext : DbContext
+{
+    public TechCoreContext(DbContextOptions<TechCoreContext> options)
+        : base(options)
+    {
+    }
+    
+    // DbSet properties...
+}
+```
+
+### DbContext Registration
+
+The context is registered in `Program.cs` with dependency injection:
+
+```csharp
+builder.Services.AddDbContext<TechCoreContext>(options => { 
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    options.UseSqlServer(connectionString);
+});
+```
+
+## DbSet Collections
+
+The context exposes 13 entity tables and 3 database views:
+
+### Core Entities
+
+```csharp
+public virtual DbSet<Cliente> Clientes { get; set; }
+public virtual DbSet<Producto> Productos { get; set; }
+public virtual DbSet<Categorium> Categoria { get; set; }
+public virtual DbSet<Proveedore> Proveedores { get; set; }
+public virtual DbSet<User> Users { get; set; }
+public virtual DbSet<Rol> Rols { get; set; }
+```
+
+### Transaction Entities
+
+```csharp
+public virtual DbSet<Venta> Ventas { get; set; }
+public virtual DbSet<VentasDetalle> VentasDetalles { get; set; }
+public virtual DbSet<Compra> Compras { get; set; }
+public virtual DbSet<ComprasDetalle> ComprasDetalles { get; set; }
+public virtual DbSet<AbonosVenta> AbonosVentas { get; set; }
+public virtual DbSet<PlanPago> PlanPagos { get; set; }
+```
+
+### Database Views
+
+```csharp
+public virtual DbSet<VwCuotasPorVencer> VwCuotasPorVencers { get; set; }
+public virtual DbSet<VwCuotasVencida> VwCuotasVencidas { get; set; }
+public virtual DbSet<VwEstadoCuentum> VwEstadoCuenta { get; set; }
+```
+
+## Model Configuration
+
+Entity configurations are defined in the `OnModelCreating` method using the Fluent API.
+
+### Primary Keys
+
+Keys are configured with explicit constraint names:
+
+```csharp
+modelBuilder.Entity<Cliente>(entity =>
+{
+    entity.HasKey(e => e.Codclien)
+        .HasName("PK__clientes__62CB7D2CF525EE4E");
+    // ...
+});
+```
+
+### Table Mapping
+
+Entities map to lowercase table names:
+
+```csharp
+modelBuilder.Entity<Venta>(entity =>
+{
+    entity.ToTable("ventas");
+    // ...
+});
+```
+
+### Database Triggers
+
+Some tables have triggers registered:
+
+```csharp
+// Trigger to update balance when payment is made
+modelBuilder.Entity<AbonosVenta>(entity =>
+{
+    entity.ToTable("abonosVentas", tb => tb.HasTrigger("TR_ActualizarSaldo"));
+});
+
+// Trigger to decrease stock when sale is made
+modelBuilder.Entity<VentasDetalle>(entity =>
+{
+    entity.ToTable("ventasDetalle", tb => tb.HasTrigger("TR_DisminuirStock"));
+});
+```
+
+## Indexes
+
+The context defines numerous indexes for query performance optimization:
+
+### Unique Indexes
+
+```csharp
+entity.HasIndex(e => e.Username, "UQ__users__F3DBC5729B3AF7EE")
+    .IsUnique();
+
+entity.HasIndex(e => e.Codigo, "UQ__categori__40F9A206C88944E2")
+    .IsUnique();
+```
+
+### Filtered Indexes
+
+```csharp
+// Index only unpaid installments
+entity.HasIndex(e => e.Pagada, "IDX_planPagos_pagada")
+    .HasFilter("([pagada]=(0))");
+
+// Index only active sales
+entity.HasIndex(e => e.Nula, "IDX_ventas_nula")
+    .HasFilter("([nula]=(0))");
+```
+
+### Composite Indexes
+
+```csharp
+entity.HasIndex(e => new { e.Stock, e.StockMinimo }, "IDX_productos_stock");
+```
+
+### Common Query Indexes
+
+```csharp
+entity.HasIndex(e => e.Fecha, "IDX_ventas_fecha");
+entity.HasIndex(e => e.Estado, "IDX_clientes_estado");
+entity.HasIndex(e => e.Nombre, "IDX_clientes_nombre");
+entity.HasIndex(e => e.Email, "IDX_clientes_email");
+```
+
+## Column Mappings
+
+Column properties are configured with data types, constraints, and default values:
+
+### Data Types
+
+```csharp
+entity.Property(e => e.Total)
+    .HasColumnType("decimal(18, 2)")
+    .HasColumnName("total");
+
+entity.Property(e => e.Fecha)
+    .HasColumnType("datetime")
+    .HasColumnName("fecha");
+
+entity.Property(e => e.Nombre)
+    .HasMaxLength(200)
+    .IsUnicode(false)
+    .HasColumnName("nombre");
+```
+
+### Default Values
+
+```csharp
+entity.Property(e => e.CreatedDate)
+    .HasDefaultValueSql("(getdate())")
+    .HasColumnType("datetime")
+    .HasColumnName("created_date");
+
+entity.Property(e => e.Estado)
+    .HasDefaultValue(true)
+    .HasColumnName("estado");
+
+entity.Property(e => e.Stock)
+    .HasDefaultValue(0)
+    .HasColumnName("stock");
+```
+
+## Relationships
+
+### One-to-Many Relationships
+
+#### Venta → Cliente
+
+```csharp
+entity.HasOne(d => d.CodclienNavigation)
+    .WithMany(p => p.Venta)
+    .HasForeignKey(d => d.Codclien)
+    .OnDelete(DeleteBehavior.ClientSetNull)
+    .HasConstraintName("FK__ventas__codclien__693CA210");
+```
+
+#### Producto → Categorium
+
+```csharp
+entity.HasOne(d => d.CodCategoriaNavigation)
+    .WithMany(p => p.Productos)
+    .HasForeignKey(d => d.CodCategoria)
+    .HasConstraintName("FK_productos_categoria");
+```
+
+#### User → Rol
+
+```csharp
+entity.HasOne(d => d.IdrolNavigation)
+    .WithMany(p => p.Users)
+    .HasForeignKey(d => d.Idrol)
+    .OnDelete(DeleteBehavior.ClientSetNull)
+    .HasConstraintName("FK__users__idrol__4E88ABD4");
+```
+
+### Master-Detail Relationships
+
+#### Venta → VentasDetalle
+
+```csharp
+entity.HasOne(d => d.NordenNavigation)
+    .WithMany(p => p.VentasDetalles)
+    .HasForeignKey(d => d.Norden)
+    .HasConstraintName("FK__ventasDet__norde__6D0D32F4");
+```
+
+#### Compra → ComprasDetalle
+
+```csharp
+entity.HasOne(d => d.NordenNavigation)
+    .WithMany(p => p.ComprasDetalles)
+    .HasForeignKey(d => d.Norden)
+    .HasConstraintName("FK__comprasDe__norde__76969D2E");
+```
+
+### Complex Relationships
+
+#### Venta (has multiple related entities)
+
+```csharp
+// Related to Cliente
+entity.HasOne(d => d.CodclienNavigation).WithMany(p => p.Venta)
+
+// Related to User (seller)
+entity.HasOne(d => d.CodvendNavigation).WithMany(p => p.Venta)
+
+// Has many VentasDetalle
+.WithMany(p => p.VentasDetalles)
+
+// Has many PlanPagos (installment plan)
+.WithMany(p => p.PlanPagos)
+
+// Has many AbonosVenta (payments)
+.WithMany(p => p.AbonosVenta)
+```
+
+## Delete Behaviors
+
+### ClientSetNull (default)
+
+```csharp
+.OnDelete(DeleteBehavior.ClientSetNull)
+```
+
+Foreign key is set to null when parent is deleted (for nullable foreign keys).
+
+### No explicit delete behavior
+
+```csharp
+entity.HasOne(d => d.NordenNavigation)
+    .WithMany(p => p.ComprasDetalles)
+    .HasForeignKey(d => d.Norden)
+    .HasConstraintName("FK__comprasDe__norde__76969D2E");
+```
+
+When no delete behavior is specified, cascading delete may be enforced by the database.
+
+## Database Views
+
+Views are configured with `HasNoKey()` and `ToView()`:
+
+### Overdue Installments View
+
+```csharp
+modelBuilder.Entity<VwCuotasVencida>(entity =>
+{
+    entity
+        .HasNoKey()
+        .ToView("vw_CuotasVencidas");
+
+    entity.Property(e => e.Cliente)
+        .HasMaxLength(200)
+        .IsUnicode(false)
+        .HasColumnName("cliente");
+    entity.Property(e => e.DiasAtraso).HasColumnName("diasAtraso");
+    entity.Property(e => e.MoraCalculada)
+        .HasColumnType("numeric(32, 4)")
+        .HasColumnName("moraCalculada");
+    // ...
+});
+```
+
+### Account Status View
+
+```csharp
+modelBuilder.Entity<VwEstadoCuentum>(entity =>
+{
+    entity
+        .HasNoKey()
+        .ToView("vw_EstadoCuenta");
+    // ...
+});
+```
+
+## Partial Class Pattern
+
+The `TechCoreContext` uses the partial class pattern:
+
+```csharp
+public partial class TechCoreContext : DbContext
+{
+    // ...
+    
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Configuration code...
+        
+        OnModelCreatingPartial(modelBuilder);
+    }
+
+    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
+}
+```
+
+This allows:
+- **Code regeneration** - EF Core scaffolding can regenerate the main class
+- **Custom extensions** - Developers can add custom configuration in a separate partial class file
+- **Separation of concerns** - Auto-generated code vs. manual customizations
+
+## Usage in Controllers
+
+Inject the context via dependency injection:
+
+```csharp
+public class ProductosController : Controller
+{
+    private readonly TechCoreContext _context;
+
+    public ProductosController(TechCoreContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<IActionResult> Index()
+    {
+        var productos = await _context.Productos
+            .Include(p => p.CodCategoriaNavigation)
+            .Where(p => p.Estado == true)
+            .ToListAsync();
+        
+        return View(productos);
+    }
+}
+```
+
+## Best Practices
+
+1. **Always use async methods** - `ToListAsync()`, `FirstOrDefaultAsync()`, `SaveChangesAsync()`
+2. **Use navigation properties** - Leverage EF Core's relationship tracking
+3. **Apply filters early** - Use `Where()` before loading data
+4. **Use Include for eager loading** - Avoid N+1 query problems
+5. **Dispose contexts properly** - Let dependency injection handle lifecycle
+
+## Next Steps
+
+- Explore the [Entity Models](/development/models)
+- Learn about [Application Architecture](/development/architecture)

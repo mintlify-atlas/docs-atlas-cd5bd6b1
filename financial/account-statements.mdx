@@ -1,0 +1,485 @@
+---
+title: Account Statements
+description: Generate comprehensive customer account statements showing credit sales, payments, and outstanding balances
+---
+
+## Overview
+
+The Account Statements module provides a complete view of customer credit accounts, aggregating sales totals, payment history, and current balances. This view serves as the foundation for customer statements and accounts receivable reporting.
+
+## Database View: vw_EstadoCuenta
+
+The account statement view consolidates credit sales with their payment history:
+
+```sql
+CREATE VIEW vw_EstadoCuenta
+AS
+SELECT 
+    v.norden,
+    c.nombre AS cliente,
+    v.total,
+    v.saldo,
+    v.meses,
+    SUM(ISNULL(a.monto,0)) AS totalAbonado
+FROM ventas v
+INNER JOIN clientes c ON v.codclien = c.codclien
+LEFT JOIN abonosVentas a ON v.norden = a.norden
+WHERE v.tipoPago = 'CREDITO'
+AND v.nula = 0
+GROUP BY v.norden, c.nombre, v.total, v.saldo, v.meses
+```
+
+## View Model Structure
+
+The `VwEstadoCuentum` class (namespace: `TechCore.Models`) maps to the view:
+
+```csharp
+public partial class VwEstadoCuentum
+{
+    public string Norden { get; set; } = null!;
+    public string Cliente { get; set; } = null!;
+    public decimal Total { get; set; }
+    public decimal Saldo { get; set; }
+    public int? Meses { get; set; }
+    public decimal? TotalAbonado { get; set; }
+}
+```
+
+<ParamField path="Norden" type="string" required>
+  Unique order number identifying the credit sale (e.g., "ORD-2024-001")
+</ParamField>
+
+<ParamField path="Cliente" type="string" required>
+  Customer name from the `clientes` table
+</ParamField>
+
+<ParamField path="Total" type="decimal" required>
+  Original sale amount including IVA (tax). This value never changes after the sale is created
+</ParamField>
+
+<ParamField path="Saldo" type="decimal" required>
+  Current outstanding balance. Automatically updated by the `TR_ActualizarSaldo` trigger when payments are posted
+</ParamField>
+
+<ParamField path="Meses" type="int" optional>
+  Number of months in the installment plan. Null for credit sales without structured payment plans
+</ParamField>
+
+<ParamField path="TotalAbonado" type="decimal" optional>
+  Sum of all payments from `abonosVentas`. Calculated by the view using `SUM(ISNULL(a.monto,0))`. Returns 0 for sales with no payments
+</ParamField>
+
+## Data Flow and Relationships
+
+<Steps>
+  <Step title="Credit Sale Created">
+    A sale record is created in the `ventas` table with:
+    - `tipoPago = 'CREDITO'`
+    - `total` = sale amount including tax
+    - `saldo` = initially equal to `total`
+    - `meses` = payment plan duration (if applicable)
+  </Step>
+  
+  <Step title="Payment Plan Generation">
+    If installments are required, records are created in `planPagos` with installment amounts and due dates
+  </Step>
+  
+  <Step title="Customer Payments">
+    As payments are received, records are inserted into `abonosVentas` with:
+    - `norden` = order number
+    - `monto` = payment amount
+    - `numeroCuota` = installment being paid
+  </Step>
+  
+  <Step title="Automatic Balance Update">
+    The `TR_ActualizarSaldo` trigger executes on `abonosVentas` insert:
+    - Reduces `ventas.saldo` by payment amount
+    - Marks corresponding `planPagos` record as paid (`pagada = 1`)
+  </Step>
+  
+  <Step title="Statement View">
+    The `vw_EstadoCuenta` view aggregates all data to show current account status
+  </Step>
+</Steps>
+
+## Key Components
+
+### The LEFT JOIN Pattern
+
+The view uses a `LEFT JOIN` to include sales even if no payments have been made:
+
+```sql
+LEFT JOIN abonosVentas a ON v.norden = a.norden
+```
+
+This ensures:
+- Sales with zero payments still appear in the statement
+- `totalAbonado` returns 0 (via `ISNULL(a.monto,0)`) instead of NULL
+
+### The GROUP BY Aggregation
+
+The view groups by sale attributes to aggregate all payments:
+
+```sql
+GROUP BY v.norden, c.nombre, v.total, v.saldo, v.meses
+```
+
+This allows `SUM(ISNULL(a.monto,0))` to calculate the total of all payments for each sale.
+
+## Account Statement Components
+
+A complete account statement includes:
+
+<CardGroup cols={2}>
+  <Card title="Original Amount" icon="file-invoice-dollar">
+    The `Total` field shows the original sale amount including tax
+  </Card>
+  
+  <Card title="Total Paid" icon="money-bill-transfer">
+    The `TotalAbonado` field aggregates all payments from the `abonosVentas` table
+  </Card>
+  
+  <Card title="Current Balance" icon="scale-balanced">
+    The `Saldo` field shows the outstanding amount maintained by the trigger
+  </Card>
+  
+  <Card title="Payment Terms" icon="calendar-check">
+    The `Meses` field indicates the payment plan duration
+  </Card>
+</CardGroup>
+
+## Usage Examples
+
+### Generate Customer Account Statement
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    string customerName = "ABC Company";
+    
+    var accountStatement = context.VwEstadoCuenta
+        .Where(ec => ec.Cliente.Contains(customerName))
+        .OrderByDescending(ec => ec.Norden)
+        .ToList();
+        
+    Console.WriteLine($"Account Statement for: {customerName}");
+    Console.WriteLine(new string('-', 80));
+    
+    decimal totalOriginal = 0;
+    decimal totalPaid = 0;
+    decimal totalBalance = 0;
+    
+    foreach (var account in accountStatement)
+    {
+        Console.WriteLine($"Order: {account.Norden}");
+        Console.WriteLine($"  Original Amount: {account.Total,15:C}");
+        Console.WriteLine($"  Total Paid:      {account.TotalAbonado,15:C}");
+        Console.WriteLine($"  Balance:         {account.Saldo,15:C}");
+        Console.WriteLine($"  Payment Plan:    {account.Meses ?? 0} months");
+        Console.WriteLine();
+        
+        totalOriginal += account.Total;
+        totalPaid += account.TotalAbonado ?? 0;
+        totalBalance += account.Saldo;
+    }
+    
+    Console.WriteLine(new string('=', 80));
+    Console.WriteLine($"TOTALS:");
+    Console.WriteLine($"  Total Credit Extended: {totalOriginal,15:C}");
+    Console.WriteLine($"  Total Payments:        {totalPaid,15:C}");
+    Console.WriteLine($"  Total Outstanding:     {totalBalance,15:C}");
+}
+```
+
+### Find Accounts with Outstanding Balances
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var outstandingAccounts = context.VwEstadoCuenta
+        .Where(ec => ec.Saldo > 0)
+        .OrderByDescending(ec => ec.Saldo)
+        .ToList();
+        
+    Console.WriteLine("Accounts with Outstanding Balances:");
+    Console.WriteLine(new string('-', 80));
+    
+    foreach (var account in outstandingAccounts)
+    {
+        decimal percentPaid = account.Total > 0 
+            ? ((account.TotalAbonado ?? 0) / account.Total) * 100 
+            : 0;
+            
+        Console.WriteLine($"{account.Cliente,-30} {account.Norden,-15}");
+        Console.WriteLine($"  Balance: {account.Saldo,12:C} ({percentPaid:F1}% paid)");
+    }
+}
+```
+
+### Calculate Payment Progress
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var accountProgress = context.VwEstadoCuenta
+        .Select(ec => new {
+            ec.Norden,
+            ec.Cliente,
+            ec.Total,
+            ec.TotalAbonado,
+            ec.Saldo,
+            PercentPaid = ec.Total > 0 
+                ? ((ec.TotalAbonado ?? 0) / ec.Total) * 100 
+                : 0,
+            IsPaidOff = ec.Saldo == 0
+        })
+        .ToList();
+        
+    var paidOffCount = accountProgress.Count(a => a.IsPaidOff);
+    var activeCount = accountProgress.Count(a => !a.IsPaidOff);
+    
+    Console.WriteLine($"Total Accounts: {accountProgress.Count}");
+    Console.WriteLine($"Paid Off: {paidOffCount}");
+    Console.WriteLine($"Active: {activeCount}");
+    Console.WriteLine();
+    
+    Console.WriteLine("Active Accounts Progress:");
+    foreach (var account in accountProgress.Where(a => !a.IsPaidOff))
+    {
+        Console.WriteLine($"{account.Cliente,-30} {account.PercentPaid,6:F1}% complete");
+    }
+}
+```
+
+### Export Statement for Reporting
+
+```csharp
+using System.Text;
+using (var context = new TechCoreContext())
+{
+    var allStatements = context.VwEstadoCuenta.ToList();
+    
+    var csv = new StringBuilder();
+    csv.AppendLine("Order Number,Customer,Total,Total Paid,Balance,Payment Plan (Months)");
+    
+    foreach (var account in allStatements)
+    {
+        csv.AppendLine($"{account.Norden}," +
+                      $"{account.Cliente}," +
+                      $"{account.Total}," +
+                      $"{account.TotalAbonado ?? 0}," +
+                      $"{account.Saldo}," +
+                      $"{account.Meses ?? 0}");
+    }
+    
+    File.WriteAllText("account_statements.csv", csv.ToString());
+    Console.WriteLine("Account statements exported to account_statements.csv");
+}
+```
+
+## Statement Accuracy and Data Integrity
+
+### Trigger-Based Balance Management
+
+The `TR_ActualizarSaldo` trigger ensures balance accuracy:
+
+```sql
+CREATE TRIGGER TR_ActualizarSaldo
+ON abonosVentas
+AFTER INSERT
+AS
+BEGIN
+    -- Update sale balance
+    UPDATE v
+    SET v.saldo = v.saldo - i.monto
+    FROM ventas v
+    INNER JOIN inserted i ON v.norden = i.norden
+
+    -- Mark installment as paid
+    UPDATE pp
+    SET pagada = 1
+    FROM planPagos pp
+    INNER JOIN inserted i 
+        ON pp.norden = i.norden 
+        AND pp.numeroCuota = i.numeroCuota
+END
+```
+
+<Note>
+The trigger executes automatically on every payment insert, ensuring:
+- The sale balance is immediately updated
+- The installment status is synchronized
+- No manual balance calculations are required
+</Note>
+
+### Balance Verification
+
+While the trigger maintains the balance, you can verify accuracy:
+
+```csharp
+using (var context = new TechCoreContext())
+{
+    var verifyBalances = context.VwEstadoCuenta
+        .Select(ec => new {
+            ec.Norden,
+            ec.Cliente,
+            ec.Total,
+            ec.TotalAbonado,
+            ec.Saldo,
+            CalculatedBalance = ec.Total - (ec.TotalAbonado ?? 0)
+        })
+        .ToList();
+        
+    var discrepancies = verifyBalances
+        .Where(v => Math.Abs(v.Saldo - v.CalculatedBalance) > 0.01m)
+        .ToList();
+        
+    if (discrepancies.Any())
+    {
+        Console.WriteLine("Balance discrepancies found:");
+        foreach (var disc in discrepancies)
+        {
+            Console.WriteLine($"Order {disc.Norden}: " +
+                            $"Stored={disc.Saldo:C}, " +
+                            $"Calculated={disc.CalculatedBalance:C}");
+        }
+    }
+    else
+    {
+        Console.WriteLine("All balances verified successfully.");
+    }
+}
+```
+
+## Filtering Options
+
+### View-Level Filters
+
+The view includes built-in filters:
+
+<Accordion title="Credit Sales Only">
+```sql
+WHERE v.tipoPago = 'CREDITO'
+```
+Excludes cash sales (`tipoPago = 'CONTADO'`) which don't generate account statements
+</Accordion>
+
+<Accordion title="Active Sales Only">
+```sql
+AND v.nula = 0
+```
+Excludes voided transactions to prevent showing cancelled sales on statements
+</Accordion>
+
+### Application-Level Filters
+
+Add additional filters in your application code:
+
+```csharp
+// Filter by customer
+var customerStatement = context.VwEstadoCuenta
+    .Where(ec => ec.Cliente == "Customer Name");
+
+// Filter by balance status
+var outstandingOnly = context.VwEstadoCuenta
+    .Where(ec => ec.Saldo > 0);
+
+// Filter by payment plan
+var installmentSales = context.VwEstadoCuenta
+    .Where(ec => ec.Meses.HasValue && ec.Meses > 0);
+
+// Filter paid-off accounts
+var paidOff = context.VwEstadoCuenta
+    .Where(ec => ec.Saldo == 0);
+```
+
+## Performance Considerations
+
+The account statement view benefits from several database indexes:
+
+```sql
+-- Customer lookup
+CREATE INDEX IDX_clientes_nombre ON clientes(nombre)
+
+-- Payment type filtering
+CREATE INDEX IDX_ventas_tipoPago ON ventas(tipoPago)
+
+-- Active sales filtering
+CREATE INDEX IDX_ventas_nula ON ventas(nula) WHERE nula = 0
+
+-- Payment lookup
+CREATE INDEX IDX_abonosVentas_norden ON abonosVentas(norden)
+```
+
+<Tip>
+For large datasets, consider adding date-based filtering to limit the result set:
+
+```csharp
+var recentStatements = from v in context.Ventas
+                       join ec in context.VwEstadoCuenta 
+                           on v.Norden equals ec.Norden
+                       where v.Fecha >= DateTime.Today.AddMonths(-12)
+                       select ec;
+```
+</Tip>
+
+## Related Views and Tables
+
+<CardGroup cols={2}>
+  <Card title="ventas" icon="receipt">
+    Source table for credit sales including total amount, balance, and payment terms
+  </Card>
+  
+  <Card title="abonosVentas" icon="coins">
+    Payment transaction records aggregated in the `totalAbonado` field
+  </Card>
+  
+  <Card title="clientes" icon="address-card">
+    Customer master data providing the `cliente` name field
+  </Card>
+  
+  <Card title="planPagos" icon="calendar">
+    Installment schedule (not directly joined but related through `norden`)
+  </Card>
+</CardGroup>
+
+## Common Statement Scenarios
+
+### Scenario 1: New Credit Sale
+
+```plaintext
+Initial State:
+  Total: $1,000.00
+  TotalAbonado: $0.00
+  Saldo: $1,000.00
+  Meses: 5
+```
+
+### Scenario 2: Partial Payment
+
+```plaintext
+After $250 payment:
+  Total: $1,000.00
+  TotalAbonado: $250.00
+  Saldo: $750.00
+  Meses: 5
+```
+
+### Scenario 3: Paid in Full
+
+```plaintext
+After final payment:
+  Total: $1,000.00
+  TotalAbonado: $1,000.00
+  Saldo: $0.00
+  Meses: 5
+```
+
+<Warning>
+Even when paid in full (`Saldo = 0`), the account remains in the view. Filter by `Saldo > 0` if you only want to see accounts with outstanding balances.
+</Warning>
+
+## See Also
+
+- [Accounts Receivable](/financial/accounts-receivable) - Overview of receivables tracking system
+- [Overdue Payments](/financial/overdue-payments) - Monitor late payments and calculate penalties
