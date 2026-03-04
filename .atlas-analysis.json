@@ -1,0 +1,146 @@
+{
+  "projectType": "saas",
+  "projectName": "TechCore Mini ERP",
+  "projectDescription": "Complete ERP system for small businesses with modules for sales, purchases, inventory, customers, suppliers, and accounts receivable management",
+  "theme": "linden",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "getting-started",
+              "system-requirements"
+            ]
+          },
+          {
+            "group": "Core Modules",
+            "pages": [
+              "modules/customers",
+              "modules/suppliers",
+              "modules/products",
+              "modules/inventory"
+            ]
+          },
+          {
+            "group": "Transactions",
+            "pages": [
+              "transactions/sales",
+              "transactions/purchases",
+              "transactions/payment-plans",
+              "transactions/payments"
+            ]
+          },
+          {
+            "group": "Financial Management",
+            "pages": [
+              "financial/accounts-receivable",
+              "financial/overdue-payments",
+              "financial/account-statements"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "admin/user-management",
+              "admin/roles-permissions",
+              "admin/categories"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Database",
+        "groups": [
+          {
+            "group": "Database Schema",
+            "pages": [
+              "database/overview",
+              "database/setup",
+              "database/entities"
+            ]
+          },
+          {
+            "group": "Tables",
+            "pages": [
+              "database/tables/users-roles",
+              "database/tables/customers-suppliers",
+              "database/tables/products-categories",
+              "database/tables/sales-purchases",
+              "database/tables/payments"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "database/views",
+              "database/triggers",
+              "database/indexes"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "development/setup",
+              "development/configuration",
+              "development/running-locally"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "development/architecture",
+              "development/data-access",
+              "development/models"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "development/git-workflow",
+              "development/coding-standards"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Customer and Supplier Management",
+    "Sales and Purchase Order Processing",
+    "Inventory Control with Stock Tracking",
+    "Credit Sales with Payment Plans",
+    "Accounts Receivable Management",
+    "Overdue Payment Tracking with Penalties",
+    "Financial Reports and Views",
+    "Role-Based User Access Control",
+    "Automated Stock Updates",
+    "Payment Plan Generation"
+  ],
+  "publicApiSurface": [
+    "Cliente (Customer entity)",
+    "Proveedore (Supplier entity)",
+    "Producto (Product entity)",
+    "Venta (Sale entity)",
+    "Compra (Purchase entity)",
+    "PlanPago (Payment plan entity)",
+    "AbonosVenta (Payment entity)",
+    "VwCuotasVencidas (Overdue payments view)",
+    "VwCuotasPorVencer (Upcoming payments view)",
+    "VwEstadoCuentum (Account statement view)",
+    "TechCoreContext (Database context)",
+    "User (User entity)",
+    "Rol (Role entity)"
+  ]
+}
